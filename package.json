@@ -1,0 +1,37 @@
+{
+  "name": "repolens",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "eslint .",
+    "security:check": "node scripts/prepublish-security-check.mjs",
+    "typecheck": "next typegen && tsc --noEmit",
+    "test:unit": "vitest run",
+    "test:regression:live": "node scripts/check-analysis-regression.mjs",
+    "test:regression:candidates": "node scripts/check-analysis-regression-candidates.mjs",
+    "observe:rate-limit": "node scripts/observe-rate-limit-candidate.mjs",
+    "test:regression:live:repos": "node scripts/check-analysis-regression.mjs",
+    "test:regression:live:owners": "ANALYSIS_REGRESSION_SCOPE=owner node scripts/check-analysis-regression.mjs",
+    "test:regression:live:all": "ANALYSIS_REGRESSION_SCOPE=all node scripts/check-analysis-regression.mjs",
+    "test:compare:live": "node scripts/check-compare-regression.mjs"
+  },
+  "dependencies": {
+    "next": "16.2.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.4",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "4.1.4"
+  }
+}

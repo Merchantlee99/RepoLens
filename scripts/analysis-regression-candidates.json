@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "updatedAt": "2026-04-21",
+  "policy": {
+    "selectionRule": "Promote only reproducible, user-visible drift that is likely to recur.",
+    "promotionChecklist": [
+      "The drift affects what a beginner sees first (identity, trust, key features, environment, or owner themes)",
+      "The public URL is stable enough to probe again",
+      "The expectation can be written against durable fields instead of marketing copy",
+      "The case is likely to recur for similar repositories"
+    ],
+    "probeProtocol": [
+      "repo candidates default to fresh-first probing when GitHub quota allows",
+      "owner candidates default to cache-friendly probing and only force refresh right after heuristic changes",
+      "when authenticated GitHub quota is exhausted, keep candidates in this backlog instead of writing flaky live expectations",
+      "promote to scripts/analysis-regression-cases.json only after the candidate is re-probed successfully"
+    ]
+  },
+  "candidates": [
+    {
+      "id": "repo-low-signal-public",
+      "title": "Low-signal public repo for identity/points fallback",
+      "targetKind": "repo",
+      "status": "landed",
+      "priority": "high",
+      "probeMode": "fresh-first",
+      "selectionHint": "README summary, summary.keyFeatures, and identity.header.points are all weak enough that the Result header risks looking empty.",
+      "expectationFocus": [
+        "summary.projectType",
+        "summary.keyFeatures",
+        "learning.identity.header.points",
+        "coverage.trustSummary.level"
+      ],
+      "notes": "Landed via scripts/analysis-regression-cases.json as repo-low-signal-meta. This repo currently exercises the README-based low-signal fallback without needing synthetic fixtures.",
+      "repoUrl": "https://github.com/sindresorhus/meta"
+    },
+    {
+      "id": "repo-sdk-demo-boundary-public",
+      "title": "SDK + demo app boundary repo",
+      "targetKind": "repo",
+      "status": "landed",
+      "priority": "high",
+      "probeMode": "fresh-first",
+      "selectionHint": "A repo where libraries/packages coexist with demo or example apps and projectType/consumptionMode can drift.",
+      "expectationFocus": [
+        "summary.projectType",
+        "learning.identity.consumptionMode",
+        "topology.focusRoot",
+        "summary.keyFeatures"
+      ],
+      "notes": "Covered by the live regression case repo-sdk-demo-supabase-js. It keeps the SDK/demos boundary on a real public monorepo package.",
+      "repoUrl": "https://github.com/supabase/supabase-js"
+    },
+    {
+      "id": "repo-large-partial-trust-density",
+      "title": "Large repo where trust summary feels too dense or too vague",
+      "targetKind": "repo",
+      "status": "landed",
+      "priority": "medium",
+      "probeMode": "fresh-first",
+      "selectionHint": "A real partial/limited result where trustSummary.reasons/omissions/basedOn need better prioritization.",
+      "expectationFocus": [
+        "coverage.trustSummary.level",
+        "coverage.trustSummary.reasons",
+        "coverage.trustSummary.omissions",
+        "coverage.trustSummary.basedOn"
+      ],
+      "notes": "Covered by the live regression case repo-trust-density-n8n. Its limited-mode trust summary already locks headline/reasons/basedOn against a real large public monorepo.",
+      "repoUrl": "https://github.com/n8n-io/n8n"
+    },
+    {
+      "id": "owner-theme-noise-public",
+      "title": "Owner portfolio with theme noise or category drift",
+      "targetKind": "owner",
+      "status": "landed",
+      "priority": "medium",
+      "probeMode": "cache-friendly",
+      "selectionHint": "An owner where keyThemes or featured/beginner repo picks still feel stack-token-heavy or semantically noisy.",
+      "expectationFocus": [
+        "summary.commonStacks",
+        "summary.keyThemes",
+        "portfolio.featuredRepos",
+        "summary.recommendedStartingPoints"
+      ],
+      "notes": "Covered by the live owner regression case owner-theme-supabase, including theme-noise filtering around database topic tokens.",
+      "repoUrl": "https://github.com/supabase"
+    },
+    {
+      "id": "rate-limit-long-countdown-observation",
+      "title": "Observe rate-limit countdown longer than one hour",
+      "targetKind": "rate-limit",
+      "status": "observing",
+      "priority": "low",
+      "probeMode": "observe-live-429",
+      "selectionHint": "Keep raw retryAfterSeconds behavior unchanged until a real >=3600s countdown is observed.",
+      "expectationFocus": [
+        "error.details.retryAfterSeconds",
+        "Retry-After header"
+      ],
+      "observed": {
+        "lastObservedAt": "2026-04-21T21:37:03+09:00",
+        "retryAfterSeconds": 289,
+        "authMode": "token"
+      },
+      "notes": "Do not add a time-unit UI contract from backend guesses; wait for a real long countdown sample."
+    }
+  ]
+}

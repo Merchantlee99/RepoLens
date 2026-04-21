@@ -1,0 +1,1550 @@
+# Implement.md — RepoLens MVP
+
+## Current Slice
+
+- Slice: harden public GitHub publishing posture for RepoLens before first external push
+- Owner: main Codex session
+- Mode: local
+- Write scope: root docs, `.github/**`, `scripts/**`, `tests/**`, `lib/**`, `app/api/**`, package/config files
+
+## Commands
+
+```bash
+python3 scripts/harness/bootstrap.py --adopt-project --init-git --seed-empty-commit --project-focus "build the first RepoLens MVP around public GitHub repository understanding"
+pnpm install
+pnpm lint
+pnpm exec tsc --noEmit
+pnpm build
+pnpm dev
+curl -I http://localhost:3000
+curl -s http://localhost:3000/result?repoUrl=https%3A%2F%2Fgithub.com%2Fopenai%2Fopenai-quickstart-node | rg "role=tablist|left-panel|보기|레이어"
+pnpm test:unit -- representative-content analyzer-fixtures
+curl -s -X POST http://localhost:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/openai/openai-quickstart-node"}'
+curl -s -X POST http://localhost:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/vercel/next-learn"}'
+curl -s -X POST http://localhost:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/Merchantlee99/Vibebuilder"}'
+python3 scripts/harness/self_test.py
+pnpm test:unit
+osascript # Chrome tab QA for /analyzing -> /result flow
+pnpm exec vitest run tests/owner-analysis.test.ts
+curl -s -X POST http://127.0.0.1:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/tailwindlabs","forceRefresh":true}' | jq ...
+node scripts/check-analysis-regression.mjs
+```
+
+## Findings
+
+- 공개 저장소 첫 커밋 관점에서는 코드 자체보다 저장소 위생이 더 급했다. `.claude/launch.json`, `.codex/context/**`, `.codex/reviews/**`, `.codex/qa/**`, `.codex/telemetry/**`, local log는 그대로 두면 `git add .` 한 번에 같이 올라갈 수 있었다.
+- README에 `ghp_...` 형태 예시를 두는 것은 실제 secret은 아니어도 공개 저장소 보안 검토와 secret scanner 관점에서 불필요하게 위험하다. 퍼블리싱 문서는 실제 prefix가 아니라 안전한 placeholder로 바꾸는 편이 맞다.
+- `/api/analyze`는 기존에도 입력 검증과 rate-limit 메타는 있었지만, browser same-origin 차단이 없어 third-party page에서 quota 소모를 유도할 수 있었다. `Origin` / `Sec-Fetch-Site` 기준 reject + `Cache-Control: no-store`를 route 레벨에서 넣는 것이 publish 전 최소선이다.
+- 보안 검사 스크립트는 토큰 패턴만 넣으면 안 된다. local absolute path, ignored 되어야 할 runtime 산출물, `.env` 파일 누락까지 함께 막아야 “GitHub에 올리기 직전 마지막 게이트” 역할을 한다.
+- mocked fetch 응답은 실제 `Headers` 객체가 아닐 수 있다. compare client가 `response.headers.get(...)`를 무조건 가정하던 부분은 이번 검증에서 실제로 회귀를 일으켰고, optional guard를 넣어야 전체 unit suite가 다시 안전해졌다.
+- `analysis.coverage`는 이미 세부 수치와 warnings/limitations를 갖고 있었지만, 프론트가 바로 쓰기에는 흩어져 있었다. `coverage.trustSummary`를 additive contract로 내려주면 `limited/partial` 상태를 headline/detail/reasons/omissions/basedOn/approximate로 바로 소비할 수 있다.
+- representative selection은 점수만으로 정렬하면 결국 같은 종류의 파일만 반복해서 올라온다. `UI/API/DB/External/Logic`마다 bucket 우선순위를 먼저 두고, 그 안에서 최고 점수 파일을 뽑는 방식이 초보자용 “대표 surface”에 더 맞다.
+- graph layer key file selection도 start file을 먼저 고른 뒤 같은 bucket을 다시 뽑지 않도록 제외 bucket을 넘겨야 한다. 그렇지 않으면 `page.tsx`를 start file로 잡고도 나머지 카드에서 또 다른 route가 layout/component를 밀어낸다.
+- rate limit / tokenless / cache / dedupe는 단순 오류 메시지로만 남기면 제품 계약이 불명확하다. 응답 `meta.policy/meta.delivery`로 `githubAuthMode`, `serverCacheTtlMs`, `serverInFlightDedupe`, `tokenlessRateLimitPerHour`, `fresh/server-cache/shared-inflight` 출처를 내려주면 Claude가 추론 없이 UI로 옮길 수 있다.
+- live regression은 새 케이스를 무조건 늘리는 것보다, 기존 실레포 케이스에 trust summary/start-file/owner expectation을 더 붙이는 쪽이 비용 대비 효율이 높다. 이번 slice에서는 16 repo + 3 owner 실제 공개 URL을 한 번에 통과하도록 corpus를 정리했다.
+- owner regression은 unit test 한두 개만으로 부족하다. 실제 owner URL(`tailwindlabs`, `developit`, `openai`)을 regression runner에 넣어 featured/beginner/commonStacks/keyThemes drift를 직접 잠그는 편이 훨씬 낫다.
+- owner regression의 가장 큰 낭비는 `forceRefresh: true` 고정이었다. repo heuristic 검증은 fresh가 맞지만, owner regression은 GitHub quota 비용이 훨씬 커서 기본값을 분리하는 편이 운영적으로 맞다.
+- rate-limit은 `resetAt`만 내려주면 스크립트와 API가 같은 기준으로 재시도하기 어렵다. `retryAfterSeconds`와 `Retry-After`를 같이 내려주면 quota 차단과 코드 실패를 더 깔끔하게 분리할 수 있다.
+- live regression은 논리 실패와 외부 quota 차단을 분리해야 한다. 기본값을 `repo-only forceRefresh + owner-soft rate-limit`으로 두면 owner quota가 repo heuristic 회귀를 가로막지 않는다.
+- compare 쪽은 backend payload를 더 늘리는 것보다 현재의 pure helper 경계를 유지하는 편이 안전하다. repo-vs-repo diff는 `lib/analysis/compare.ts`, 환경 판정은 `env-match`/프론트 user-env 상태에 의존하므로, 사용자 환경 의존 summary를 API payload에 미리 구워 넣으면 캐시와 재사용성이 오히려 나빠진다.
+- owner regression을 더 단단하게 잠그려면 `analyzeOwnerSnapshot(...)` 결과만이 아니라, 그 앞단 `selectOwnerEnrichmentCandidates(...)`의 선택 순서도 fixture로 고정해야 한다. live owner drift의 상당수는 score 함수 자체보다 어떤 repo를 enrichment 대상으로 뽑았는지에서 나온다.
+- `learning.identity.startHere`는 이미 웹앱에서 UI entry를 선호하지만, `summary.recommendedStartFile`은 앱/모노레포 앱에서 여전히 `keyFiles[0]`을 따라가고 있었다. 현재 Result 일부 뷰는 아직 `summary.recommendedStartFile`을 읽으므로, backend에서 두 계약을 더 가깝게 맞추는 편이 실제 UI 일관성에 직접 도움이 된다.
+- 앱 레포의 시작점 추천은 key file 전체 정렬과 분리해서 다루는 편이 안전하다. `package.json`이 semantic signal 때문에 `keyFiles[0]`으로 올라와도, 초보자용 시작점은 여전히 `UI -> README -> package` 또는 `API -> README -> package`처럼 project-type별로 따로 고를 수 있다.
+- 실제 공개 레포 기준으로 새로운 분기 규칙은 다음처럼 동작한다.
+  - `gitdiagram` -> `src/app/page.tsx`
+  - `cal.com` -> `apps/web/app/page.tsx`
+  - `n8n` -> `README.md` (현재 keyFiles 안에 직접적인 UI entry가 없어 README fallback)
+  - `openai/openai-python` -> `README.md`
+- Result IA 품질을 잠그려면 `projectType`만으로는 부족하다. 실제 캔버스가 읽는 것은 `analysis.layers`, `keyFiles`, `recommendedStartFile`이므로, live regression도 layer 구성과 대표 시작점까지 함께 봐야 drift를 빨리 잡을 수 있다.
+- 실제 공개 레포 `openai/openai-python`를 재분석해 보니 기존 규칙은 `types/model.py`, `resources/models.py`, `cli/_api/models.py` 같은 SDK 모델 파일을 `DB`로 오판정하고 있었다. 이건 초보자 관점의 구조 이해를 직접 망치므로, Python SDK의 model/resource 경로 false positive를 걷어내고 `src/<package>/**/*.py`를 library logic로 올려주는 보정이 필요했다.
+- Result 화면은 데이터가 부족한 상태가 아니라, 같은 좋은 정보를 여러 영역이 조금씩 나눠 갖고 있는 상태다. 따라서 지금 우선순위는 새 backend 기능 추가보다 `어느 질문을 어느 영역이 답하는지`를 고정하는 것이다.
+- `analysis.learning.identity`, `analysis.coverage`, `buildArchitectureModel(...)`, `editGuides`, `recommendedStartFile`는 이미 Result 화면의 4질문을 설명할 수 있다. 문제는 field 부족보다 ownership과 duplication guard가 문서로 고정되지 않았던 점이다.
+- 실레포 `vercel/ai`는 root `package.json.name`이 `ai-repo`이고 root `README.md`가 `packages/ai/README.md`로 redirect되는 구조라, `strong library text`만으로는 대표 workspace를 못 고른다. monorepo library focus는 `repo name == workspace leaf`와 `root README -> workspace README`도 직접 신호로 봐야 안정적이다.
+- 실레포 regression은 projectType만 잠그면 부족하다. `cal.com`, `n8n`, `supabase`, `clerk/javascript` 같이 서비스/배포/비용 신호가 함께 있는 공개 레포에 env expectation을 추가해야 heuristic drift를 조기에 잡을 수 있다.
+- `src/main.tsx`, `src/App.tsx`만 있는 최소 Vite/React SPA는 기존 규칙에서 `LIBRARY_ENTRY_PATTERN`과 UI representative score가 충돌했다. `main.tsx`를 library entry로 보면 앱이 `라이브러리 또는 개발 도구`로 밀리므로, backend는 SPA entry를 별도 UI surface로 올리고 점수도 component 급으로 줘야 한다.
+- Docker 환경의 존재 여부와 역할은 분리해서 봐야 한다. `docker-compose.dev.yml`, `Dockerfile.prod` 같은 변형 파일은 exact filename만 보면 놓치고, 결국 `recommended`로만 뭉개진다. basename regex로 dev/deploy variant를 함께 잡고 `optional-dev` / `optional-deploy`로 나누는 편이 compare/result의 환경 판정에 더 유용하다.
+- large monorepo에서 root `package.json` runtime dependency를 그대로 required 근거로 쓰면, 현재 focus app과 무관한 서비스(OpenAI, Pinecone 등)가 `servicesRequired`로 잘못 승격된다. `focusRoot`가 있거나 nested workspace가 감지될 때는 focus package, schema/path/readme/compose 같은 범위 신호를 우선 보고 root dependency는 optional/ambient 맥락으로만 다루는 편이 더 안전하다.
+- semantic service 신호도 단독으로는 required 근거가 되면 안 된다. 특히 monorepo에서는 representative content가 sibling package를 일부 포함할 수 있으므로, provider service를 required로 올릴 때는 `focus dependency + readme/path/schema/compose` 같은 범위 근거와 교차 확인해야 한다.
+- `deployTargetRequired`는 `Vercel`, `Railway`, `Fly.io`, `Render`, `Netlify` 같은 앱 호스팅 설정 파일만으로 올리면 과장된다. 초보자 질문이 "이게 꼭 그 클라우드여야 하나?"인 만큼, 현재는 `AWS/GCP/Azure` 같은 infra-cloud만 hard-required 후보로 남기는 편이 더 보수적이고 실사용에 맞다.
+- vector/object storage 비용 드라이버는 top-level tier보다 `drivers.kind` 회귀가 더 중요하다. 실제 live repo에서는 `gitdiagram`이 `llm + storage`를 동시에 보존하고, fixture 기반 RAG 앱은 `llm + saas(vector) + storage(object)` 조합을 유지한다.
+- `buildEnvironmentGuide` 기준으로 `detectAcceleratorPreference`, `detectCpuArch`, `detectMinVram`, `deployTargetsFromPathSignals`, `deployTargetsFromConfigContent`, `detectRequiredDeployTarget`, `detectRuntimeMode`, `costDriversFromSignals`, `buildCostEstimate`가 모두 실제 payload 필드에 연결돼 있어야 프론트 `내 환경` 판정이 살아난다. 이번 audit에서 전부 연결 상태를 다시 확인했다.
+- 공개 프런트 env prefix(`NEXT_PUBLIC_`, `PUBLIC_`, `VITE_`)를 벗기지 않으면 `Supabase`, `OpenAI` 같은 서비스가 `servicesRequiredDetails`에서 빠질 수 있다. 서비스 env 감지는 raw key보다 prefix-stripped key를 먼저 보는 편이 더 안전하다.
+- `Supabase`와 `Firebase`는 기본 무료 진입이 가능한 managed backend이므로, 그것만으로 `costEstimate.tier`를 `under_10`으로 올리면 과보수 오탐이 생긴다. 비용 tier는 결제/인증/메일/infra형 SaaS와 LLM/GPU/vector/object-storage 신호 위주로 올리는 편이 맞다.
+- compare/user-env 품질을 위해 runtime/service/consumptionMode 쪽 테스트는 fixture 수준에서 구체적으로 잠가야 한다. `library vs app vs cli vs hybrid`, `Upstash Redis -> redis canonicalId`, `free-tier Vercel + Supabase`, `CLI-only -> local-only` 같은 케이스를 고정해 두면 프론트 판정이 덜 흔들린다.
+
+- header subtitle는 길이보다 충돌 제거가 더 중요하다. README 첫 문장이 있어도 `SDK/library/design-system` identity와 맞지 않으면 과감히 버리고 `plainTitle/projectType` 기반 문장을 우선해야 초보자 설명이 흐트러지지 않는다.
+- `컴포넌트 라이브러리 또는 디자인 시스템` 계열은 `package.json`보다 `README.md`를 시작점으로 두는 편이 일관된다. 실제로 `headlessui`, `radix`, `mui` 모두 문서에서 public surface를 먼저 설명하고, 코드 읽기는 그 다음 단계다.
+- live regression은 `repo`와 `owner`를 같은 러너에서 묶어 두면 GitHub rate limit이나 owner sampling variability가 repo heuristic 검증까지 막는다. scope를 분리해 두면 repo analyzer 품질선을 더 자주, 더 안정적으로 확인할 수 있다.
+- regression expectation도 heuristic 계약의 일부다. 시작 파일 우선순위를 바꿨으면 `scripts/analysis-regression-cases.json`도 같은 규칙군 전체(`headlessui`, `mui`)에 맞춰 함께 정리해야 drift가 줄어든다.
+
+- semantic addon은 `Prisma, Stripe 연결과 연동`보다 `Prisma 연결과 Stripe 연동`처럼 역할을 분리해서 말해야 읽기 쉽다. 같은 한 줄이라도 DB와 외부 연동을 각자 문장 역할로 분리하는 편이 훨씬 자연스럽다.
+- one-liner에 보여주는 서비스 이름은 사실 기반 나열이 아니라 제품 설명력 순서여야 한다. 그래서 현재 규칙은 `DB 1개 + 핵심 외부 연동 1개`를 우선하고, observability-only 이름은 stronger signal이 있을 때 제거한다.
+- `header.points`는 README key point가 없을 때 `summary.keyFeatures`를 그대로 재사용하면 안 된다. fallback도 구조 feature 이름이 아니라 `어디서부터 어떻게 읽으면 되는지`를 말하는 초보자용 문장이어야 상단 IA가 덜 반복된다.
+- `header.subtitle`는 `stackSummary`보다 `plainTitle` 기반 fallback을 먼저 봐야 한다. 그렇지 않으면 `cal.com`처럼 제품은 일정/예약 서비스인데 subtitle은 `서비스 플랫폼 구조를 먼저 보면...` 같은 generic 문장으로 남는다.
+- README summary 번역 단계에서도 제품 유형 패턴이 더 필요했다. `scheduling/booking`, `diagram`, `repository browsing`을 직접 번역하지 않으면 `subtitle`이 fallback까지 내려가지 못하고 구조 안내형 문장으로 굳는다.
+- semantic addon은 `DB 2개`를 다 보여주는 것보다 `DB 1개 + 핵심 외부 연동 1개`가 더 설명력이 높다. 실제로 `cal.com`은 `Prisma, TypeORM`보다 `Prisma, Stripe`가 제품 이해에 더 직접적이었다.
+- observability 도구(`Sentry`)는 stronger signal이 있을 때 one-liner에서 뒤로 밀려야 한다. `n8n`처럼 DB 신호가 함께 있으면 `TypeORM 연결`이 `TypeORM, Sentry 연결과 연동`보다 훨씬 읽기 쉽다.
+- `plainTitle` generic fallback은 repo description만 보면 한계가 있다. `repoName + repoDescription + readmeIntro + useCase`를 같이 보지 않으면 `repository browsing`, `calendar scheduling`, `diagram` 같은 제품 유형이 generic `웹앱/도구`로 떨어진다.
+- `workspace` 토큰은 너무 넓어서 admin/dashboard 계열 신호로 쓰면 안 된다. 실제로 `repo-workspace-learning-guide` fixture를 `데이터와 설정을 관리하는 웹 서비스`로 오분류시켰고, `dashboard/admin/console/backoffice/control panel` 정도로 좁히는 편이 안전했다.
+- `summary.oneLiner`는 `identitySubtitle`이 구조 안내형 문장일 때(`...구조를 먼저 보면...`) `plainTitle`보다 뒤로 밀리면 안 된다. 이런 경우에는 더 구체적인 `plainTitle`을 첫 문장으로 올리는 편이 초보자 이해에 맞다.
+- live smoke 기준 `calcom/cal.com`은 이제
+  - `plainTitle=일정과 예약을 관리하는 서비스`
+  - `subtitle=일정 선택, 예약 생성, 관리 흐름을 서비스 관점에서 따라가며 읽을 수 있습니다.`
+  - `oneLiner=... Prisma, Stripe 연결과 연동이 확인됩니다.`
+  로 정리된다.
+- `summary.oneLiner`는 raw GitHub description을 재사용하면 안 된다. repo description은 영어 marketing copy인 경우가 많아서 초보자용 상단 설명으로 쓰면 README 복사처럼 보인다.
+- `plainTitle -> identity.header.subtitle -> summary.oneLiner`는 별개 필드가 아니라 한 계약으로 봐야 한다. `plainTitle`은 짧은 명사구, `subtitle`은 초보자용 한 문장, `oneLiner`는 여기에 구조 힌트를 덧붙인 문장으로 계층을 나누는 편이 안정적이다.
+- `summary.oneLiner`는 3문장을 넘기지 않는 편이 낫다. limited-analysis 안내와 semantic addon이 동시에 있을 때는 제한 안내보다 실제 구조/연동 힌트를 우선 남기는 편이 결과 화면 헤더에 더 유효하다.
+- `summary.oneLiner`는 3문장 이하보다 더 좁혀야 한다. 구조 문장과 semantic 근거 문장이 둘 다 있을 때는 별도 2문장으로 나누기보다, `구조를 정리했고, 대표 코드에서는 ...`처럼 한 문장으로 합치는 편이 상단 IA 밀도가 훨씬 안정적이다.
+- project-type별 context sentence는 “무엇을 읽으면 되나”를 짧게 말해주는 수준이면 충분하다. `루트 설정과 대표 앱 루트`, `화면 X개와 API Y개`, `공개 엔트리와 핵심 로직`처럼 1문장으로 압축하는 편이 읽기 속도가 빠르다.
+- `학습용 예제 저장소`는 `브라우저에서 사용하는 화면 중심 웹앱` 같은 generic title보다 예제 저장소 성격을 먼저 드러내야 한다. `vercel/next-learn`처럼 README와 루트 구조가 tutorial 성격을 강하게 보이면 `예제와 튜토리얼을 모아 둔 학습용 저장소`가 더 맞다.
+- package 기반 app root를 가진 서비스 모노레포는 `stackSummary`와 `plainTitle`이 서로 다른 역할을 맡아야 한다. `n8n`은 `stackSummary=여러 앱과 공용 패키지를 함께 운영하는 서비스 플랫폼`으로 두고, `plainTitle=자동화 흐름을 만들고 실행하는 서비스`로 사용자 목적을 먼저 설명하는 편이 읽기 쉽다.
+- 실제 smoke 기준 `summary.oneLiner`는 이제 세 레포 모두 한국어 초보자 문장으로 내려온다.
+  - `vercel/next-learn`: `예제 앱과 참고 코드를 함께 모아 둔 학습용 저장소입니다. README와 대표 예제 루트부터 보면 전체 흐름이 가장 덜 헷갈립니다.`
+  - `n8n-io/n8n`: `자동화 흐름과 여러 연동 작업을 관리하는 서비스입니다. ...`
+  - `ahmedkhaleel2004/gitdiagram`: `공개 GitHub 레포를 구조와 설명 중심으로 빠르게 이해하게 돕는 도구입니다. ...`
+- `summary.stack`과 `identity.stackHighlights`는 같은 정렬 규칙을 쓰면 안 된다. 전자는 기술 칩의 canonical order가 중요하고, 후자는 "이 레포에서 무엇이 핵심 역할을 하는가"를 우선해야 한다.
+- `identity.stackNarrative`는 generic tool 우선순위로 만들면 `Zod`, `Vite` 같은 보조 도구가 너무 쉽게 앞줄에 올라온다. 기술별 가중치를 따로 둬 framework / data / repo-defining service를 우선시키는 편이 초보자 설명에 맞다.
+- `identity.header.subtitle`와 `identity.header.points` 같은 압축 계약을 backend가 직접 만드는 편이 맞다. 프론트가 `plainTitle`, `useCase`, `readmeCore.summary`, `keyFeatures`를 다시 조합하게 하면 화면별 중복 규칙이 생긴다.
+- README key point를 그대로 header points로 쓰면 marketing copy가 섞일 수 있다. `Active Community:` 같은 colon label형 문구와 promotional wording은 header points에서 제외하고, 필요하면 code-derived `keyFeatures`로 fallback하는 편이 이해 화면 취지에 더 맞다.
+- fallback header points는 feature 우선순위가 필요하다. `페이지 기반 진입 구조`, `서버 요청 처리`, `공용 패키지 + 앱 분리 구조`, `운영 문서 중심 구조` 같은 신호를 초보자 문장으로 다시 매핑하고, 스타일링처럼 설명력이 낮은 feature는 상단 포인트에서 아예 숨기는 편이 낫다.
+- README key point도 화면 계약에서는 raw English로 두지 않는 편이 낫다. 지금 규칙은 `header.points`에서만 안전한 패턴을 한국어 입문 문장으로 바꾸고, 패턴이 약하면 raw English를 버리고 fallback 포인트로 채운다.
+- README-derived point와 fallback point는 경쟁 관계가 아니라 보완 관계다. 지금은 번역 가능한 README point를 앞에 두고, 부족한 슬롯만 code-derived fallback으로 채워 2개 제한을 유지한다.
+- live smoke 기준 `cal.com`은 `커뮤니티 중심으로 운영되는 오픈소스 일정 관리 플랫폼입니다.`, `gitdiagram`은 `생성된 다이어그램을 Mermaid 코드나 PNG로 내보낼 수 있습니다.`처럼 README bullet이 한국어 입문 문장으로 정리된다. 반대로 `next-learn`처럼 README point가 약한 케이스는 fallback 포인트로 채운다.
+- header subtitle은 raw README 영어 문장을 그대로 쓰면 초보자 관점에서 사실상 설명이 아니라 복사에 가깝다. backend에서 `readme summary -> 안전한 한국어 패턴 치환 -> plainTitle/stackSummary/outputType 기반 fallback` 순서로 한 번 압축해 내려주는 편이 화면 계약으로 더 안정적이다.
+- 실제 smoke에서 `vercel/next-learn`, `ahmedkhaleel2004/gitdiagram`, `n8n-io/n8n`은 이제 모두 한국어 subtitle로 내려온다. 다만 `stackSummary` 자체가 잘못 분류된 repo에서는 subtitle이 별도 fallback으로 좋아져도 summary strip 품질은 별개 문제로 남는다.
+- subtitle 후보 중 한국어 명사구(`예제 앱과 참고 코드를 함께 모아 둔 학습용 저장소`)는 문장 끝맺음이 없으면 헤더에서 어색하므로, backend에서 `입니다.`를 붙여 sentence case로 정리하는 편이 낫다.
+- `모노레포 웹 플랫폼`과 `라이브러리 또는 SDK` 사이의 충돌은 workspace root 분류가 핵심이다. `packages/frontend/editor-ui` 같은 product app root를 `primary app workspace`로 취급하지 않으면 실제 서비스형 monorepo가 library 쪽으로 잘못 내려간다.
+- `학습용 예제 저장소` 오탐의 핵심은 route root 개수보다 README 텍스트 패턴이었다. `.env.example`, `steps below` 같은 일반 운영 문구까지 tutorial/example로 잡히면 제품 레포도 예제 저장소로 오분류된다.
+- `stackSummary`는 `projectType`만 맞아도 좋아지지만, monorepo product repos는 `모노레포 플랫폼`보다 `서비스 플랫폼` 쪽 문장이 초보자에게 더 직접적이다.
+- live smoke 기준 `n8n-io/n8n`은 `TypeScript / Vue / Tailwind CSS / Node.js / Vite`와 `Vue(화면 구성), TypeScript(타입 기반 구조), Tailwind CSS(화면 스타일)` 조합으로 정리되고, header points는 `주요 화면에서 어떤 동작이 시작되는지 먼저 볼 수 있습니다`, `요청이 어디로 들어와 처리되는지 빠르게 찾을 수 있습니다`처럼 초보자용 입문 문장으로 정리된다.
+- live smoke 기준 `vercel/next-learn`은 `Next.js / React / TypeScript / Tailwind CSS / Zod`와 `Next.js(화면 + 서버 요청), React(화면 구성), TypeScript(타입 기반 구조)` 조합으로 정리되고, header subtitle은 이제 `예제 앱과 참고 코드를 함께 모아 둔 학습용 저장소입니다.`처럼 한국어 one-liner로 폴백된다.
+- live smoke 기준 `n8n-io/n8n`은 이제 `projectType=모노레포 웹 플랫폼`, `stackSummary=여러 앱과 공용 패키지를 함께 운영하는 서비스 플랫폼`으로 내려오고, `ahmedkhaleel2004/gitdiagram`은 `projectType=풀스택 웹앱`, `stackSummary=AI 기능이 들어간 풀스택 웹앱`으로 바로잡힌다.
+- `summary.oneLiner`의 raw 영어 repo description 재사용 문제는 이번 slice에서 해결했다. 남은 리스크는 문장 품질 자체보다 `semanticAddon`이 붙는 긴 문장의 밀도 조절 쪽이다.
+- semantic addon은 그대로 두면 `대표 코드 기준, ...`으로 시작해 상단 카피에 너무 분석 로그처럼 보인다. one-liner 병합 시에는 `대표 코드에서는 ...`처럼 사용자 문장에 가깝게 바꿔 주는 편이 읽기 쉽다.
+- semantic addon의 source path는 header에서는 항상 유지할 필요가 없다. API 흐름을 보여줄 때도 `app/page.tsx`보다 `/api/analyze 요청 뒤 Prisma 연결과 OpenAI 연동이 확인됩니다.`가 초보자 이해에 더 직접적이다.
+- live smoke 기준 `cal.com`, `n8n`, `gitdiagram`의 one-liner는 이제 모두 2문장이다. 첫 문장은 제품 설명, 둘째 문장은 `구조를 정리했고 + 대표 코드에서는 ...` 형태로 압축된다.
+- top-level `summary.keyFeatures`에는 semantic wiring detail을 올리지 않는 편이 맞다. `화면-로직 연결 확인`, `API 내부 로직 연결 확인`은 구조 근거로는 유효하지만, 상단 요약보다는 `inferences`와 file evidence에 있을 때 설명력이 더 높다.
+- `summary.keyFeatures`의 semantic integration도 one-liner와 같은 우선순위를 따라야 한다. 즉, `Sentry` 같은 observability-only 신호는 stronger product signal(`Stripe`, `OpenAI`, `TypeORM`, `Prisma`)이 있으면 상단 key feature에서 빠져야 한다.
+- live smoke 기준 `cal.com`의 top-level key features는 이제 `Prisma 연결 확인`, `Stripe 연동 확인`을 남기고 `Sentry 연동 확인`은 빠진다. `n8n`도 `TypeORM 연결 확인`만 남고 observability/detailed wiring은 위로 올라오지 않는다.
+- `대표 API 흐름 감지`도 top-level에서는 결국 `서버 요청 처리`와 중복되는 경우가 대부분이다. 초보자 요약에서는 이 신호를 내리고, API 흐름 자체는 one-liner / facts / inferences에서만 남기는 편이 정보 위계가 더 안정적이다.
+- `summary.stack`만 좁히면 부족하고, 실제로는 `stackGlossary`와 같은 evidence filter를 한 번 더 거쳐야 focus workspace의 visible stack과 설명 stack이 맞춰진다.
+- monorepo focus 결과에서는 root package dependency를 그대로 믿으면 sibling app 기술이 다시 새어 들어온다. display stack은 `focusRoot` 경로 + focus workspace manifest를 우선하고, 추가 보정은 glossary evidence로 제한하는 편이 더 안전하다.
+- 초보자용 상단 IA는 glossary 전체를 다시 파싱하기보다 backend가 바로 쓰는 `stackNarrative`와 `stackHighlights` 계약을 내려주는 편이 낫다. 이 값은 UI가 문장/칩/tooltip 어떤 형태로든 재사용하기 쉽다.
+- live smoke 기준 `n8n-io/n8n`은 이제 `packages/frontend/editor-ui` 관점에서 `TypeScript / Tailwind CSS / Node.js / Vite / Vue`로 정리되고, `vercel/next-learn`은 `dashboard/final-example` 기준 stack/identity가 유지된다.
+- `pnpm exec tsc --noEmit`은 이 저장소에서 `.next/types` include 때문에 build와 병렬로 돌리면 가끔 false negative가 난다. 이 검사는 build 완료 뒤 다시 한 번 단독 실행하는 편이 안전하다.
+- RepoLens의 1단계 MVP는 AI 없이도 성립한다.
+- 현재 가장 중요한 것은 결과 화면보다 먼저 분석 결과 스키마와 지원 범위 정의다.
+- Codex harness는 빈 RepoLens 저장소에 바로 이식 가능하다.
+- Next.js 16 App Router 기반의 앱 셸과 Tailwind 4 구성이 정상적으로 올라간다.
+- public GitHub repo를 대상으로 `/api/analyze` route에서 기본 메타데이터, 트리, package.json을 읽는 v0 분석 흐름이 동작한다.
+- 분석기는 이제 전체 파일을 그대로 보지 않고 코드/설정 파일 위주로 필터링한 뒤, route/api/component/db/cli/library 신호를 기반으로 분류한다.
+- route 분리는 single-page 상태 전환보다 명확하고, `analyzing`과 `result`를 URL로 재진입할 수 있게 만든다.
+- 여전히 monorepo나 tutorial-style repo에서는 “어떤 app이 대표 app인가” 문제 때문에 추천 시작 파일이 완벽하지 않을 수 있다.
+- 개발 도구형 저장소는 일반 라이브러리 규칙으로 처리하면 README가 과도하게 상위에 노출되므로, 운영 문서/자동화 스크립트/템플릿을 별도 신호로 다뤄야 한다.
+- `.py` 스크립트를 분석 대상에서 제외하면 tooling repo의 stack, layer, Quick Start가 모두 왜곡된다.
+- `Merchantlee99/Vibebuilder` 같은 pack 저장소는 UI/API가 없어도 Logic 레이어와 tooling-specific edit guide를 보여주는 편이 초보자 이해에 더 직접적이다.
+- multi-pack tooling 저장소는 파일 수만으로 대표 root를 고르면 실제 운영 문서 밀도가 높은 pack을 놓칠 수 있어, root-level operation docs / scripts / templates를 별도로 점수화해야 한다.
+- 브라우저 세션 캐시가 repo URL 기준 raw JSON만 저장하면, 휴리스틱이 개선된 뒤에도 이전 분석 결과가 다시 렌더링될 수 있다.
+- 예제 저장소에서는 대표 루트를 이미 잘 골라도 Key Files가 다른 예제 폴더의 config까지 끌어오면 초보자 관점에서 맥락이 깨진다.
+- `starter`와 `solution/final/complete`가 함께 있는 튜토리얼 repo는 대표 app 선택 점수에서 둘을 명시적으로 구분해야 한다.
+- 서버 메모리 cache가 `repo + sha`만 기준이면 휴리스틱 수정 후에도 stale analysis가 남을 수 있어 별도 heuristic version이 필요하다.
+- 다음 단계의 체감 상승은 전체 파일 수집이 아니라 대표 범위 안의 핵심 파일 본문을 예산 안에서 읽는 데서 시작한다.
+- representative content fetch는 full mode 12개, limited mode 6개, 파일당 64KB 상한으로 시작하는 편이 rate limit과 정확도 사이 균형이 좋다.
+- focus root가 정해진 상태에서는 `starter/example/template` 계열 바깥 경로를 대표 본문 후보에서 적극적으로 제외해야 tutorial repo에서 semantic 단계가 흔들리지 않는다.
+- tooling repo는 README 하나만 읽어서는 부족하고, 운영 문서/스크립트/템플릿을 같이 읽는 편이 다음 단계 semantic 신호 추출에 직접적으로 도움이 된다.
+- 현재 캔버스가 참조하는 `analysis.layers`는 keyFiles 정렬만 고쳐서는 해결되지 않고, 분석 생성 단계에서 별도로 focus scope를 적용해야 cross-workspace noise가 사라진다.
+- project type, difficulty, key feature는 저장소 전체 신호로 유지하고, 캔버스용 layer만 focus root 기준으로 좁히는 편이 사용자에게 보이는 구조와 설명의 일관성이 가장 좋다.
+- 새 Inspector overlay/view-model 구조는 이미 들어와 있었고, 현재 코드 기준으로는 `ResultWorkspace -> InspectorOverlay` 연결이 정상적으로 타입체크된다.
+- live regression 기준 `cal.com`의 layer 샘플은 이제 `apps/web` 바깥 경로를 노출하지 않는다.
+- representative content는 수집만으로는 체감이 거의 없고, 실제 가치 상승은 `fetch`, route handler, DB client, external SDK 같은 shallow semantic 신호를 후처리해 기존 설명 계층에 주입할 때 시작된다.
+- semantic 신호는 전체 스키마를 갈아엎지 않고도 `summary.oneLiner`, `summary.keyFeatures`, `facts`, `inferences`, `keyFiles[*].whyImportant/evidence`를 동시에 강화할 수 있다.
+- markdown 파일까지 semantic 실행 근거로 쓰면 README 문구가 runtime 연동으로 과장될 수 있으므로, 의미 추출은 코드/설정 파일 중심으로 제한하는 편이 안전하다.
+- live sample 기준 `openai/openai-quickstart-node`는 이제 one-liner와 facts에서 OpenAI 연동을 드러내지만 README 자체는 runtime 근거처럼 과장하지 않는다.
+- Result 화면에서 가장 부족한 것은 구조도가 아니라 README 오프닝을 대체할 첫 결론 블록이다.
+- 헤더 one-liner와 별도 시작 배너가 분리돼 있으면 정보가 중복되고 시선이 갈라진다. 둘을 하나의 intro card로 합치는 편이 `30초 안에 이해` 목표와 더 잘 맞는다.
+- 파일 Inspector의 `어떻게 고쳐?`는 학습 맥락에서 지나치게 편집 중심이다. 현재 semantic evidence와 레이어 컨텍스트만으로도 `어디서 쓰여?` 서사로 충분히 재구성 가능하다.
+- 레이어 기술 스택은 분석기 필드를 새로 만들지 않고도 `summary.stack` + semantic facts(`data_clients`, `external_services`) + 레이어 파일 패턴으로 보수적으로 표시할 수 있다.
+- Landing과 Analyzing 문구도 `README보다 빨리 이해`라는 북극성과 맞춰야 제품 포지셔닝이 일관된다.
+- 기존 `ArchitectureGraphModel` 안의 `repoCard / groupCards / focusWorkspace / layerCards / connections`만으로도 별도 분석기 수정 없이 구조도 탭 MVP를 만들 수 있다.
+- `이해 화면`과 `구조도`는 한 화면에 섞는 것보다 탭으로 분리하고, `Focus Rail`과 `Inspector`는 공용으로 재사용하는 편이 초보자 입장에서 더 덜 헷갈린다.
+- 구조도 탭은 import graph가 아니라 `repo -> cluster -> focus scope -> layer -> key file` 순서의 시각적 맵으로 시작하는 것이 현재 데이터 정확도와 제품 목적에 더 맞다.
+- 이번 slice에서는 상단 탭보다 좌측 패널이 더 자연스럽다. 현재 Result 화면은 이미 좌측 포커스 rail과 우측 inspector를 전제로 짜여 있어, 보기 전환도 같은 패널 안으로 넣는 편이 시선 이동과 모바일 축약 규칙을 함께 정리하기 쉽다.
+- 부분 분석/경고는 banner보다 작은 chip이 더 맞다. 정상 분석에서는 아무 경고도 보이지 않게 두고, 제한 상태일 때만 우측 상단의 세부 진입점으로 노출하는 편이 학습 화면의 집중도를 유지한다.
+- 구조도는 `repo -> scope -> layer` 3단 중심으로 단순화하는 편이 초보자에게 더 직접적이다. cluster/workspace는 데이터가 있을 때만 보조 정보로 남기고, 기본 프레임은 대표 범위와 레이어 해석을 우선해야 한다.
+- 좌측 패널은 고정 레이어 목록보다 분석 결과를 그대로 반영하는 편이 맞다. `UI/API/DB`가 없는 저장소에서 빈 카테고리를 계속 보여주면 초보자에게는 "무언가 빠졌나?"라는 잘못된 신호가 된다.
+- 일부 코드 파일이 현재 휴리스틱으로 UI/Logic/API/DB/External 어디에도 안정적으로 들어가지 않으면, 숨기지 말고 `Code` fallback으로 드러내는 편이 제품 신뢰도에 유리하다.
+- 부분 분석 상태는 warnings/limitations와 분리해서 다루기보다 하나의 view-model로 묶는 편이 status chip, status inspector, left panel 상태 섹션을 서로 일치시키기 쉽다.
+- `tsconfig.json`이 `.next/dev/types`를 include하고 있어서, 삭제된 컴포넌트 참조가 stale 빌드 산출물에 남아 있으면 실제 소스와 무관한 타입 오류가 재발할 수 있다. 이 경우 `.next` 정리가 필요하다.
+- `Code` fallback을 단순 카운트로만 보여주면 사용자는 "분석이 덜 됐다"는 사실만 보고 끝난다. 샘플 파일과 전용 inspector를 같이 열어줘야 분석이 어디서 끊겼는지 이해가 된다.
+- 기존 graph에 없는 파일이라도 pseudo target id를 주면 fallback file inspector로 바로 내려갈 수 있다. 이 방식이 graph model 자체를 크게 건드리지 않으면서 탐색성을 올리는 가장 안전한 절충안이다.
+- 미분류 코드가 많을 때 기존 `samplePaths 3개`만으로는 실제 범위 감각이 안 잡힌다. analyzer에서 별도 preview fact를 만들고 UI는 그 preview를 우선 쓰는 편이 더 낫다.
+- `왜 미분류됐는지`는 레이어 미지원 자체보다도 경로 성격이 중요하다. 스크립트/도구, CLI, 엔트리 코드처럼 경로 유형을 요약해주면 사용자가 분석 한계를 더 빨리 이해한다.
+- 경로 유형만으로는 부족하다. 대표 파일 본문에서 DB 사용, 내부 API 호출, CLI 실행, 백그라운드 실행 같은 얕은 의미 신호를 같이 요약해줘야 `Code` fallback이 단순 실패 표시가 아니라 "현재는 이렇게 읽어야 하는 코드"라는 안내로 바뀐다.
+- live fetch 단계에서 미분류 경로를 일부 우선 시드하면, full/ltd 예산을 크게 늘리지 않고도 fallback 설명 품질을 올릴 수 있다.
+- 구조도 품질은 시각 레이아웃만의 문제가 아니다. `index.ts`, `utils.ts`, `package.json` 같은 generic 파일이 레이어 대표 행을 차지하면 아무리 프론트가 정렬해도 diagram이 신뢰되지 않는다.
+- Logic 레이어는 특히 entry-only 신호에 취약하다. `src/index.ts` 하나만으로 Logic 박스를 올리는 것보다 `Code` fallback으로 내리고 partial 상태를 드러내는 편이 제품 신뢰도에 더 맞는다.
+- 레이어 대표 파일 정렬은 `짧은 경로`보다 `역할이 드러나는 이름`을 우선해야 한다. `repo-service.ts`, `useDiagram.ts`, `schema.prisma`, `route.ts`가 `index.ts`, `utils.ts`보다 먼저 보여야 구조 설명력이 높다.
+- diagram 탭과 canvas가 같은 `ArchitectureGraphModel`을 공유하므로, graph model 쪽에서도 fallback ordering과 confidence를 같이 정리해야 프론트가 동일한 데이터를 안정적으로 쓸 수 있다.
+- shallow semantic extraction만으로도 import edge를 잡으면 `화면 -> 로직`, `API -> 로직` 흐름을 one-liner/facts/inferences/key-file evidence에 동시에 반영할 수 있다.
+- basename만 남기는 compact label은 `useDiagram.ts` 같은 케이스에서는 괜찮지만, `repo-service.ts`처럼 동일 이름 충돌 가능성이 있는 경우 `lib/repo-service.ts`처럼 2-segment compact path가 더 안전하다.
+- focus root 기준 Key Files는 `app/**` 밖의 연결 로직 파일을 놓칠 수 있으므로, representative UI/API 파일이 직접 import한 Logic 파일은 semantic 단계에서 보강 후보로 승격시키는 편이 실제 읽기 흐름과 더 가깝다.
+- representative semantic score는 새 스키마 없이도 `readOrder`와 `editGuides[0]`를 동시에 더 현실적인 흐름으로 보정할 수 있다. 핵심은 UI 시작 파일, UI가 직접 쓰는 Logic, 대표 API route, API 뒤의 Logic 순서를 일관되게 올리는 것이다.
+- edit guide는 intent 문구를 바꾸기보다, 파일 순서와 reason/evidence 앞머리에 semantic 우선 근거를 추가하는 편이 UI blast radius가 작고 기존 기획 문구도 유지된다.
+- direct signal만 보면 `API route`에 OpenAI/Prisma import가 없을 때 one-liner와 inspector 근거가 약해진다. representative import graph를 2-depth까지만 따라가도 `API -> service -> db/external` 구조를 충분히 설명할 수 있다.
+- second-order flow는 새 필드 추가보다 `inferences`와 `keyFiles[*].evidence`에 `연결 후 연동`, `하위 연동` 같은 근거를 추가하는 편이 현재 스키마와 UI를 깨지 않는다.
+- README 링크를 평면 리스트로만 보면 `Getting Started`, `Learn More`, `Security`, `Deployment` 안의 vendor/docs/tutorial 링크가 preview로 오인된다. section heading 문맥까지 같이 봐야 false positive가 크게 줄어든다.
+- repo 이름 매칭도 generic token(`node`, `app`, `sdk`) 하나만으로 boost를 주면 `nodejs.org`, `nextjs.org` 같은 framework/vendor 사이트가 공식 미리보기처럼 올라온다. repo full slug 일치나 의미 있는 token 조합만 identity boost에 써야 한다.
+- live public repo 기준 `openai/openai-quickstart-node`, `calcom/cal.com`, `sourcewizard-ai/react-ai-agent-chat-sdk`에서 preview false positive가 제거됐고, `vercel/next-learn`, `tailwindlabs/headlessui`, `supabase/supabase` 같은 positive 사례는 유지됐다.
+- landing 입력창은 mode toggle 없이 유지하는 편이 맞다. `owner/repo`와 `owner`를 URL shape으로만 판별하면 사용자의 결정 부담이 줄고, 제품 진입도 더 단순해진다.
+- owner-level 분석은 “조직 전체 구조도”가 아니라 “공개 포트폴리오 이해 화면”이어야 한다. 그렇지 않으면 서로 무관한 repo들을 하나의 시스템처럼 과장하게 된다.
+- owner summary는 깊은 코드 분석보다 public repo metadata 기반 얕은 분류가 맞다. 대표 repo 추천과 repo drill-down이 핵심이며, 개별 repo 구조 이해는 기존 analyzer를 재사용하면 된다.
+- owner portfolio에서 `docs/tutorial/vendor links`와 같은 약한 문맥은 설명용 부가 정보로만 쓰고, 실제 drill-down 시작점은 featured/beginner repo 추천으로 좁히는 편이 초보자에게 더 직접적이다.
+
+- `analysis.learning.readmeCore` now deterministically fills `summary`, `keyPoints`, `audience`, `quickstart`, `links`, and `architectureNotes` from README structure without adding any LLM dependency.
+- README section classification must check `architecture` before `features`; otherwise headings like `Architecture Overview` are misclassified and architecture bullets leak into key points.
+- README summary extraction is safer when admonitions, blockquotes, package-label-only paragraphs, and internal-package disclaimers are ignored. This prevents `[!TIP]`, `@scope/package`, and internal package notices from becoming the primary beginner summary.
+- README key-point extraction is intentionally conservative now. `quickstart/docs/architecture` sections are excluded, setup/API-key/dashboard noise is filtered out, and if a repo does not expose clear beginner-facing bullets the result is allowed to stay empty.
+- README architecture notes now preserve whole bullet lines instead of sentence fragments. This keeps useful notes such as `Backend Configuration ... Used in API routes.` intact.
+- Live README regression expectations should lock stable signals, not force weak ones. `next-learn` now only requires summary+audience, while `sourcewizard-ai/react-ai-agent-chat-sdk` explicitly requires the two frontend/backend architecture notes.
+- `analysis.learning.stackGlossary[*]` now carries repo-specific context in addition to generic definitions:
+  - `usedFor`: 이 레포에서 그 기술이 맡는 역할을 한 줄로 설명
+  - `examplePaths`: 그 판단을 뒷받침하는 대표 경로 0~2개
+- stack glossary는 과장보다 보수성이 우선이다. example path는 `keyFiles`와 scoped `paths`를 우선 쓰고, `semanticSignals.routeHandlers / dbClients / externalServices`가 강한 기술만 추가로 연결한다.
+- Next.js 같은 프레임워크는 초보자 설명력이 높은 `화면 1개 + API 1개` 예시가 더 낫다. 같은 기술의 경로를 많이 보여주기보다 역할이 다른 대표 경로를 섞는 편이 이해가 빠르다.
+- 새 stack glossary 필드는 additive contract라 기존 UI를 깨지 않는다. 다만 이전 session cache payload에는 없을 수 있으므로 client normalization에서 `usedFor = null`, `examplePaths = []`를 backfill한다.
+- `focusRoot`가 있는 monorepo에서는 stack glossary도 그 범위를 우선 따라야 한다. 그렇지 않으면 sibling example/workspace의 기술(`Vite`, 다른 API route 등)이 현재 보고 있는 결과에 섞인다.
+- scoped glossary에서 근거가 전혀 없는 stack item은 숨기는 편이 맞다. `summary.stack`의 전역 신호보다 `현재 focus workspace에서 실제로 설명 가능한 기술`이 초보자에게 더 중요하기 때문이다.
+
+## Validation
+
+- `pnpm security:check` passed
+- `pnpm exec vitest run tests/analyze-route.test.ts` passed (`4 tests`)
+- `pnpm exec vitest run tests/analysis-quality-guards.test.ts tests/analyzer-fixtures.test.ts tests/analysis-errors.test.ts tests/analysis-policy.test.ts tests/analyze-route.test.ts tests/client-cache.test.ts tests/compare-view-model.test.ts tests/compare-diagnostics.test.ts tests/compare-client.test.ts tests/owner-analysis.test.ts` passed (`123 tests`)
+- `pnpm test:unit` passed (`26 files`, `232 tests`)
+- `pnpm exec tsc --noEmit` passed
+- `pnpm lint` passed
+- `pnpm build` passed
+- `ANALYSIS_REGRESSION_SCOPE=all node scripts/check-analysis-regression.mjs` passed against `http://localhost:3000`
+  - `selectedCaseCount=19`
+  - `failedCount=0`
+  - `repoCount=16`
+  - `ownerCount=3`
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts -t "fullstack app and prefers the page entry as the reading start|monorepo platforms and surfaces workspace-aware guidance|prefers a UI entry as recommended start even when semantic ranking lifts package.json first|official sdk repos library-first"` passed
+- `pnpm exec tsc --noEmit` passed after the start-file ranking update
+- live targeted smoke passed for updated start-file contracts:
+  - `ahmedkhaleel2004/gitdiagram` => `startFile=src/app/page.tsx`
+  - `calcom/cal.com` => `startFile=apps/web/app/page.tsx`
+  - `n8n-io/n8n` => `startFile=README.md`
+  - `openai/openai-python` => `startFile=README.md`, `layerNames=["Logic"]`
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts` passed after adding the Python SDK layer regression (`Logic` present, `DB` absent, library entry key files preserved)
+- `pnpm exec vitest run tests/result-view-model.test.ts tests/result-workspace-model.test.ts tests/analysis-graph.test.ts` passed after the heuristics helper unification
+- `pnpm exec tsc --noEmit` passed after the Python SDK heuristics updates
+- live smoke: `openai/openai-python` now returns `layerNames=["Logic"]`, `startFile=README.md`, and key files starting with `src/openai/_client.py`, `src/openai/__init__.py` instead of surfacing a false `DB` layer
+- `pnpm exec vitest run tests/result-view-model.test.ts tests/result-workspace-model.test.ts` passed while auditing the current Result contract and sidebar/status ownership
+- `node -e "JSON.parse(require('fs').readFileSync('scripts/result-qa-corpus.json','utf8')); console.log('ok')"` passed after adding the repo QA corpus
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts -t "repo-name and install-target sdk packages|root readme redirects|sdk classification over example classification"` passed after adding monorepo SDK focus-root regressions
+- `pnpm exec vitest run tests/environment-requirements.test.ts -t "optional-dev|optional-deploy|LLM app with OpenAI and Redis costs under_50|free-tier Vercel app without external services"` passed
+- `pnpm test:unit` passed (`22 files`, `200 tests`)
+- `pnpm build` passed
+- standalone `pnpm exec tsc --noEmit` passed after `pnpm build`
+- `pnpm lint` passed
+- `ANALYZE_BASE_URL=http://localhost:3101 node scripts/check-analysis-regression.mjs` passed with `selectedCaseCount=16`, `failedCount=0`
+  - `vercel/ai` => `projectType=라이브러리 또는 SDK`, `consumptionMode=hybrid`, `focusRoot=packages/ai`
+  - `cal.com` => deploy targets contain `Vercel/Railway/Render`, required services contain `PostgreSQL/Redis/Stripe`, `envCostTier=prod`
+  - `n8n` => deploy targets contain `Self-host/Docker`, optional services contain `OpenAI/Redis/PostgreSQL`, `envCostTier=prod`
+  - `supabase/supabase` => deploy targets contain `Vercel/Self-host`, required services contain `Supabase/PostgreSQL`, `envCostTier=prod`
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts -t "classifies React SPA repositories as frontend apps|treats minimal Vite SPA entry files as UI surfaces instead of library entries"` passed
+- `pnpm exec vitest run tests/environment-requirements.test.ts -t "labels dev-only docker setup as optional-dev instead of generic recommended|labels deploy-only docker setup as optional-deploy instead of generic recommended|LLM app with OpenAI and Redis costs under_50|free-tier Vercel app without external services"` passed
+- `pnpm test:unit` passed (`22 files`, `198 tests`)
+- `pnpm exec eslint lib/analysis/heuristics.ts lib/analysis/learning.ts tests/analyzer-fixtures.test.ts tests/environment-requirements.test.ts` passed
+- `pnpm build` passed
+- `pnpm exec vitest run tests/environment-requirements.test.ts tests/analyzer-fixtures.test.ts` passed after monorepo service-scope, deploy-target strength, and live-regression expectation updates
+- `pnpm exec eslint lib/analysis/learning.ts scripts/check-analysis-regression.mjs tests/environment-requirements.test.ts tests/analyzer-fixtures.test.ts` passed
+- `pnpm test:unit` passed (`22 files`, `195 tests`)
+- `pnpm build` passed
+- standalone `pnpm exec tsc --noEmit` passed after `pnpm build`
+- `ANALYZE_BASE_URL=http://localhost:3100 node scripts/check-analysis-regression.mjs` passed with new environment assertions:
+  - `vercel/next-learn` => `envDeployTargetRequired=null`, `envDeployTargets` contains `Vercel`, `envCostTier=free`
+  - `ahmedkhaleel2004/gitdiagram` => `servicesRequired=[Cloudflare R2, OpenAI, Upstash Redis]`, `envCostTier=under_50`, `envCostDriverKinds` contains `llm`, `storage`
+
+- `pnpm exec vitest run tests/environment-requirements.test.ts tests/analyzer-fixtures.test.ts` passed after wiring audit follow-up fixes (`NEXT_PUBLIC_*` env key handling, Supabase/Firebase cost-tier softening, consumption/service canonical tests)
+- `pnpm exec tsc --noEmit` passed
+- `pnpm test:unit` passed (`19 files`, `156 tests`)
+- `pnpm lint` passed
+- `pnpm build` passed
+
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts tests/semantic-analysis.test.ts` passed after subtitle compaction / identity conflict / README-first start regression updates
+- `pnpm exec eslint lib/analysis/learning.ts tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts` passed
+- live smoke on `http://localhost:3000/api/analyze` returned:
+  - `https://github.com/ahmedkhaleel2004/gitdiagram` -> `title=GitHub 레포를 이해하기 쉽게 보여주는 도구`, `subtitle=GitHub 레포 구조를 빠르게 파악하게 돕습니다.`
+  - `https://github.com/openai/openai-quickstart-node` -> `projectType=라이브러리 또는 SDK`, `title=다른 코드에서 불러다 쓰는 AI 라이브러리`, `subtitle=다른 코드에서 어떤 기능을 가져다 쓰는지 중심으로 읽으면 됩니다.`
+- `ANALYZE_BASE_URL=http://localhost:3000 node scripts/check-analysis-regression.mjs` passed with `scope=repo`, `selectedCaseCount=14`, `skippedCaseCount=2`
+- `ANALYSIS_REGRESSION_SCOPE=owner ANALYZE_BASE_URL=http://localhost:3000 node scripts/check-analysis-regression.mjs` passed with `scope=owner`, `selectedCaseCount=2`, `skippedCaseCount=14`
+- README beginner-summary는 "첫 문장"보다 "쓸모 있는 첫 문장"이 중요하다. `license information`, Next.js 기본 boilerplate, `create-next-app`, `you can start editing the page`, `deploy on vercel`, `Active Community`, `Enterprise-Ready`, `Full Control` 같은 문장은 초보자용 첫 설명에서 제거해야 한다.
+- README key point는 많이 뽑는 것보다 잘 버리는 쪽이 낫다. product bullet이 약하면 빈 배열로 두고 code-derived header point로 fallback하는 편이 상단 IA 품질이 안정적이다.
+- owner beginner 추천은 star/brand보다 setup friction 영향을 크게 받는다. GPU 필요, Docker 필요, 다수 필수 서비스가 동시에 있으면 beginner 큐레이션에서는 강하게 감점하는 편이 실제 탐색 비용과 더 맞다.
+- `light_setup`은 단순 환경 메타데이터가 아니라 owner beginner ranking 계약이다. "가볍게 훑어보기 좋음" 같은 reason code를 backend에서 직접 내려야 Claude 쪽 owner 카드가 차단막을 숨기지 않고 표현할 수 있다.
+- README quality regression은 summary 존재 여부만 보면 부족하다. `identity.header.points`와 `readmeCore.keyPoints` 둘 다 live regression에서 lock해야 promotional drift를 잡을 수 있다.
+- `pnpm exec vitest run tests/analysis-quality-guards.test.ts tests/analyzer-fixtures.test.ts tests/owner-analysis.test.ts tests/semantic-analysis.test.ts` passed after README-noise hardening and beginner ranking updates
+- `pnpm exec eslint lib/analysis/learning.ts lib/analysis/owner.ts lib/analysis/types.ts scripts/check-analysis-regression.mjs tests/analysis-quality-guards.test.ts tests/owner-analysis.test.ts` passed
+- live smoke on `http://localhost:3000/api/analyze` returned:
+  - `https://github.com/n8n-io/n8n` -> `readmeSummary=n8n is a workflow automation platform...`, `identityPoints=[앱 코드와 공용 패키지가 어떻게 나뉘는지 바로 파악할 수 있습니다., 요청이 어디로 들어와 처리되는지 빠르게 찾을 수 있습니다.]`
+- `ANALYZE_BASE_URL=http://localhost:3000 node scripts/check-analysis-regression.mjs` passed again after tightening `readmeKeyPointsAbsent` / `identityPointsContain` expectations for README noise filtering
+- `ANALYSIS_REGRESSION_SCOPE=owner ANALYZE_BASE_URL=http://localhost:3000 node scripts/check-analysis-regression.mjs` passed again after adding owner beginner setup-cost penalties
+- README prose 안의 `Node.js` / `Python` 같은 런타임 이름을 shell command로 오인하면 SDK/quickstart repo summary가 두 번째 문장이나 requirements 문장으로 밀린다. command-line 판정은 `node path.js`, `python script.py` 같은 실제 실행 문맥만 잡도록 좁혀야 한다.
+- `openai/openai-quickstart-node` 같은 예제 저장소는 이 차이가 바로 드러난다. 수정 전에는 `The examples are organized by API...`가 summary였고, 수정 후에는 `This repository provides a collection of examples...`가 summary로 올라온다.
+- `pnpm exec vitest run tests/analysis-quality-guards.test.ts tests/analyzer-fixtures.test.ts tests/semantic-analysis.test.ts` passed after narrowing command-line false positives for runtime prose
+- `curl -sS -X POST http://localhost:3000/api/analyze ... forceRefresh=true` for `https://github.com/openai/openai-quickstart-node` returned `readmeSummary=This repository provides a collection of examples demonstrating how to use the OpenAI APIs with the Node.js SDK.`
+- `pnpm build` passed
+- standalone `pnpm exec tsc --noEmit` passed after build generation
+
+- `pnpm exec vitest run tests/semantic-analysis.test.ts tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts` passed
+- `pnpm exec vitest run tests/analysis-quality-guards.test.ts tests/analyzer-fixtures.test.ts tests/semantic-analysis.test.ts` passed after adding header-point regression coverage
+- `pnpm lint` passed
+- `pnpm build` passed
+- `pnpm exec tsc --noEmit` passed after `pnpm build`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/n8n-io/n8n` returned:
+  - `subtitle=자동화 흐름과 여러 연동 작업을 관리하는 서비스입니다.`
+  - `header.points=[앱 코드와 공용 패키지가 어떻게 나뉘는지 바로 파악할 수 있습니다., 화면 조각이 어떻게 나뉘어 재사용되는지 파악할 수 있습니다.]`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/calcom/cal.com` returned:
+  - `points=["커뮤니티 중심으로 운영되는 오픈소스 일정 관리 플랫폼입니다.","주요 화면에서 어떤 동작이 시작되는지 먼저 볼 수 있습니다."]`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/ahmedkhaleel2004/gitdiagram` returned:
+  - `points=["생성된 다이어그램을 Mermaid 코드나 PNG로 내보낼 수 있습니다.","GitHub 레포 구조를 아키텍처 다이어그램으로 바로 바꿔 볼 수 있습니다."]`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/vercel/next-learn` returned:
+  - `points=["주요 화면에서 어떤 동작이 시작되는지 먼저 볼 수 있습니다.","요청이 어디로 들어와 처리되는지 빠르게 찾을 수 있습니다."]`
+- `pnpm exec vitest run tests/analysis-quality-guards.test.ts tests/analyzer-fixtures.test.ts tests/semantic-analysis.test.ts` passed after one-liner compaction regression updates
+- `pnpm lint` passed
+- `pnpm build` passed
+- `pnpm exec tsc --noEmit` passed after `pnpm build`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/calcom/cal.com` returned:
+  - `oneLiner=일정 선택, 예약 생성, 관리 흐름을 서비스 관점에서 따라가며 읽을 수 있습니다. 루트 설정과 대표 앱 루트를 기준으로 구조를 정리했고, 대표 코드에서는 Prisma 연결과 Stripe 연동이 확인됩니다.`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/n8n-io/n8n` returned:
+  - `oneLiner=자동화 흐름과 여러 연동 작업을 관리하는 서비스입니다. 루트 설정과 대표 앱 루트를 기준으로 구조를 정리했고, 대표 코드에서는 TypeORM 연결이 확인됩니다.`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/ahmedkhaleel2004/gitdiagram` returned:
+  - `oneLiner=공개 GitHub 레포를 구조와 설명 중심으로 빠르게 이해하게 돕는 도구입니다. 화면 3개와 API 5개 흐름을 기준으로 구조를 정리했고, 대표 코드에서는 OpenAI 연동이 확인됩니다.`
+- `pnpm exec vitest run tests/semantic-analysis.test.ts tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts` passed after demoting low-value semantic key features from top summary
+- `pnpm lint` passed
+- `pnpm build` passed
+- `pnpm exec tsc --noEmit` passed after `pnpm build`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/calcom/cal.com` returned:
+  - `keyFeatures=["Prisma 연결 확인","Stripe 연동 확인","워크스페이스 105개 감지","공용 패키지 + 앱 분리 구조","페이지 기반 진입 구조"]`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/n8n-io/n8n` returned:
+  - `keyFeatures=["TypeORM 연결 확인","워크스페이스 63개 감지","공용 패키지 + 앱 분리 구조","재사용 컴포넌트 구조","서버 요청 처리"]`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/ahmedkhaleel2004/gitdiagram` returned:
+  - `keyFeatures=["OpenAI 연동 확인","페이지 기반 진입 구조","재사용 컴포넌트 구조","서버 요청 처리","외부 서비스 연동"]`
+- `pnpm lint` passed
+- `pnpm build` passed
+- `pnpm exec tsc --noEmit` passed after `pnpm build`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/calcom/cal.com` returned:
+  - `subtitle=일정 선택, 예약 생성, 관리 흐름을 서비스 관점에서 따라가며 읽을 수 있습니다.`
+  - `oneLiner=... Prisma 연결과 Stripe 연동이 확인됩니다.`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/n8n-io/n8n` returned:
+  - `subtitle=자동화 흐름과 여러 연동 작업을 관리하는 서비스입니다.`
+  - `oneLiner=... TypeORM 연결이 확인됩니다.`
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts tests/semantic-analysis.test.ts` passed
+- `pnpm lint` passed
+- `pnpm build` passed
+- `pnpm exec tsc --noEmit` passed after `pnpm build`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/calcom/cal.com` returned:
+  - `subtitle=일정 선택, 예약 생성, 관리 흐름을 서비스 관점에서 따라가며 읽을 수 있습니다.`
+  - `oneLiner=... Prisma, Stripe 연결과 연동이 확인됩니다.`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/n8n-io/n8n` returned:
+  - `subtitle=자동화 흐름과 여러 연동 작업을 관리하는 서비스입니다.`
+  - `oneLiner=... TypeORM 연결이 확인됩니다.`
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts` passed
+- `pnpm lint` passed
+- `pnpm build` passed
+- `pnpm exec tsc --noEmit` passed after `pnpm build`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/calcom/cal.com` returned:
+  - `plainTitle=일정과 예약을 관리하는 서비스`
+  - `oneLiner=일정과 예약을 관리하는 서비스입니다. 루트 설정과 대표 앱 루트를 기준으로 구조를 정리했고, 대표 코드에서는 Prisma 연결과 Stripe 연동이 확인됩니다.`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/vercel/next-learn` preserved the example-repo identity copy with no regression
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/semantic-analysis.test.ts tests/client-cache.test.ts` passed
+- `pnpm lint` passed
+- `pnpm build` passed
+- `pnpm exec tsc --noEmit` passed after `pnpm build`
+- `PORT=3100 pnpm start` passed for production smoke
+- `PORT=3100 pnpm start` + smoke on `https://github.com/n8n-io/n8n` returned a 2-sentence one-liner with no extra limited-analysis sentence:
+  - `자동화 흐름과 여러 연동 작업을 관리하는 서비스입니다.`
+  - `루트 설정과 대표 앱 루트를 기준으로 구조를 정리했고, 대표 코드에서는 TypeORM 연결이 확인됩니다.`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/vercel/next-learn` preserved the 2-sentence example-repo one-liner with no regression
+- `curl`/`fetch` smoke on `https://github.com/vercel/next-learn` returned:
+  - `projectType=학습용 예제 저장소`
+  - `plainTitle=예제와 튜토리얼을 모아 둔 학습용 저장소`
+  - `summary.oneLiner` in Korean with no raw English description reuse
+- `pnpm exec vitest run tests/semantic-analysis.test.ts tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts` passed after removing `대표 API 흐름 감지` from top-level semantic key features
+- `pnpm lint` passed
+- `pnpm build` passed
+- `pnpm exec tsc --noEmit` passed after `pnpm build`
+- `PORT=3100 pnpm start` + smoke on `https://github.com/calcom/cal.com`, `https://github.com/n8n-io/n8n`, `https://github.com/ahmedkhaleel2004/gitdiagram` returned:
+  - `cal.com` keyFeatures: `Prisma 연결 확인`, `Stripe 연동 확인`, `워크스페이스 105개 감지`, `공용 패키지 + 앱 분리 구조`, `페이지 기반 진입 구조`
+  - `n8n` keyFeatures: `TypeORM 연결 확인`, `워크스페이스 63개 감지`, `공용 패키지 + 앱 분리 구조`, `재사용 컴포넌트 구조`, `서버 요청 처리`
+  - `gitdiagram` keyFeatures: `OpenAI 연동 확인`, `페이지 기반 진입 구조`, `재사용 컴포넌트 구조`, `서버 요청 처리`, `외부 서비스 연동`
+  - 세 레포 모두 top-level key features에는 `대표 API 흐름 감지`가 더 이상 나타나지 않았다.
+- `curl`/`fetch` smoke on `https://github.com/n8n-io/n8n` returned:
+  - `projectType=모노레포 웹 플랫폼`
+  - `plainTitle=자동화 흐름을 만들고 실행하는 서비스`
+  - `summary.oneLiner` in Korean with service-first wording
+- `curl`/`fetch` smoke on `https://github.com/ahmedkhaleel2004/gitdiagram` returned:
+  - `projectType=풀스택 웹앱`
+  - `plainTitle=GitHub 레포를 이해하기 쉽게 보여주는 도구`
+  - `summary.oneLiner` in Korean with no `A GitHub repository visualization product` leakage
+- `pnpm exec tsc --noEmit` passed after wiring `unclassified_code_semantic_hints` through analyzer, status view, and Code fallback inspector
+- `python3 scripts/harness/bootstrap.py --adopt-project --init-git --seed-empty-commit --project-focus "build the first RepoLens MVP around public GitHub repository understanding"` passed
+- `python3 scripts/harness/self_test.py` passed
+- `pnpm test:unit` passed
+- `pnpm lint` passed
+- `pnpm build` passed
+- `curl -s -X POST http://localhost:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/openai/openai-quickstart-node"}'` returned a valid `CLI 도구` analysis payload
+- `curl -s -X POST http://localhost:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/vercel/next-learn"}'` returned a valid `풀스택 웹앱` analysis payload with UI/API layers
+- `curl -s -X POST http://localhost:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/Merchantlee99/Vibebuilder"}'` returned `라이브러리 또는 개발 도구`, `Python`, `Logic` layer, tooling-specific key features, and tooling-specific edit guides
+- Chrome QA on `http://localhost:3000/analyzing?repoUrl=https%3A%2F%2Fgithub.com%2FMerchantlee99%2FVibebuilder` redirected to `/result` and rendered the updated one-liner, Logic layer, Quick Start, and `Focus: repo root` inspector evidence
+- `curl -s -X POST http://localhost:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/Merchantlee99/Vibebuilder"}'` now returns `topology.focusRoot = vb-pack-codex-harness`, `pack root 2개 감지`, codex-first Quick Start, and `대표 tooling root: vb-pack-codex-harness`
+- Chrome QA after clearing sessionStorage confirmed `/analyzing -> /result` now renders `tooling` focus rail, `Focus Scope = vb-pack-codex-harness`, codex-first Quick Start, and no fake `package.json` hint
+- `tests/client-cache.test.ts` verifies versioned session cache reads and invalidates legacy unversioned cache entries
+- `pnpm test:unit` now includes example/monorepo focus fixtures and graph focus-rail regressions (`30 passed`)
+- `curl -s -X POST http://localhost:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/vercel/next-learn"}'` now returns `dashboard/final-example` scoped key files only when recomputed under the new cache key
+- Chrome QA after clearing sessionStorage confirmed `vercel/next-learn` shows `tooling = 0`, `PRIMARY SCOPE`, and `dashboard/final-example` scoped Quick Start while `Merchantlee99/Vibebuilder` still shows `tooling = 1` and `PRIMARY PACK`
+- `pnpm test:unit -- representative-content analyzer-fixtures` passed after adding representative content selector coverage for tutorial, tooling, and oversize-file cases
+- `pnpm test:unit` passed with representative-content tests included (`33 passed`)
+- `pnpm lint` passed after adding representative content selection and snapshot fields
+- `pnpm build` passed after wiring representative content fetching into the live analyzer pipeline
+- `pnpm test:unit -- analysis-quality-guards` passed after adding focus-scoped layer regressions
+- `pnpm exec tsc --noEmit` passed after confirming the new inspector overlay API is wired
+- `pnpm lint` passed with the mixed Claude/Codex UI state
+- `pnpm build` passed with the updated Result canvas + inspector integration
+- `pnpm test:regression:live` passed against the live repo set on `http://localhost:3000`
+- live API check for `https://github.com/calcom/cal.com` confirmed `analysis.layers[*].files` and evidence are scoped to `apps/web`
+- `pnpm test:unit -- semantic-analysis analysis-quality-guards analyzer-fixtures` passed after wiring semantic signals into analyzer output
+- `pnpm test:unit` passed with semantic analysis coverage included (`38 passed`)
+- `pnpm exec tsc --noEmit` passed after adding `lib/analysis/semantics.ts`
+- `pnpm lint` passed after tightening semantic extraction to avoid markdown noise
+- `pnpm build` passed after semantic one-liner/facts/key-file enrichment
+- `pnpm test:regression:live` passed after semantic signal integration
+- live API check for `https://github.com/openai/openai-quickstart-node` confirmed one-liner/facts now surface `OpenAI` while README key file remains documentation-only
+- `pnpm test:unit -- result-view-model semantic-analysis analysis-quality-guards analyzer-fixtures` passed after adding intro-card and learning-first inspector view-model coverage
+- `pnpm test:unit` passed with `tests/result-view-model.test.ts` included (`41 passed`)
+- `pnpm exec tsc --noEmit` passed after adding `components/result-intro-card.tsx`
+- `pnpm lint` passed after Result intro card, layer tech hints, and inspector copy changes
+- `pnpm build` passed after Landing / Analyzing / Result UI realignment
+- `pnpm test:unit -- repo-diagram-view-model analysis-graph result-view-model` passed after adding the new structure-diagram view model and keeping the existing README-first canvas tests green
+- `pnpm exec tsc --noEmit` passed after wiring `ResultWorkspace` view tabs and `RepoDiagramView`
+- `pnpm lint` passed after adding `components/result-view-tabs.tsx`, `components/repo-diagram-view.tsx`, and `components/repo-diagram-view-model.ts`
+- `rm -rf .next && pnpm exec tsc --noEmit` passed after removing stale deleted-component references from `.next/dev/types`
+- `pnpm test:unit` passed with dynamic layer/status navigation and unclassified-code fallback coverage included (`51 passed`)
+- `pnpm lint` passed after removing the last stale helper from `components/result-view-model.ts`
+- `pnpm build` passed with the current Result workspace wiring and no `result-intro-card` dependency in source
+- `pnpm test:unit -- result-view-model result-workspace-model` passed after adding inspectable Code fallback and fallback-file drill-down coverage
+- `pnpm build` passed after wiring pseudo inspector ids (`status:code-fallback`, `file-fallback:*`) into the current Result workspace
+- `pnpm exec tsc --noEmit` passed after extending `LayerCoverageSummary` with uncovered-reason groups and preview facts
+- `pnpm test:unit` passed with broader unclassified preview/reason coverage included (`53 passed`)
+- `pnpm build` passed after wiring `unclassified_code_preview` / `unclassified_code_reasons` into the current status and Code fallback view-models
+- `pnpm test:unit -- result-view-model result-workspace-model` passed after adding `unclassified_code_semantic_hints` / `unclassified_code_content_coverage`
+- `pnpm lint` passed after adding unclassified semantic summary handling
+- `pnpm build` passed after seeding live representative-content fetches with uncovered paths
+- `pnpm exec tsc --noEmit` passed after adding representative path scoring and weak-layer demotion rules
+- `pnpm test:unit -- analysis-quality-guards repo-diagram-view-model` passed after adding diagram-input regressions for weak Logic buckets and representative ranking
+- `pnpm test:unit` passed with diagram-input quality regressions included (`55 passed`)
+- `pnpm lint` passed after wiring representative ranking helpers into `heuristics` and `graph`
+- `pnpm build` passed with the updated analysis cache version `2026-04-20-diagram-input-v1`
+- `pnpm exec tsc --noEmit` passed after exporting `layersForPath`, resolving internal import targets, and promoting linked Logic files into semantic key files
+- `pnpm test:unit -- semantic-analysis analysis-quality-guards repo-diagram-view-model result-view-model result-workspace-model` passed after adding UI/API-to-Logic linkage expectations and aligning diagram tests with concept-only layer cards
+- `pnpm test:unit` passed with import-link semantic coverage included (`55 passed`)
+- `pnpm lint` passed after the import-link semantic enrichment slice
+- `pnpm build` passed with the updated analysis cache version `2026-04-20-import-links-v1`
+- `pnpm exec tsc --noEmit` passed after wiring semantic edit-guide ranking into analyzer and bumping the cache version to `2026-04-20-semantic-ranking-v1`
+- `pnpm test:unit -- semantic-analysis analyzer-fixtures result-view-model result-workspace-model` passed after asserting semantic read-order and edit-guide priority changes
+- `pnpm test:unit` passed after semantic ranking integration (`55 passed`)
+- `pnpm lint` passed after connecting `applySemanticHintsToEditGuides`
+- `pnpm build` passed with the semantic ranking cache version
+- `pnpm exec tsc --noEmit` passed after adding second-order integration-surface traversal to semantic inference helpers
+- `pnpm test:unit -- semantic-analysis analyzer-fixtures` passed after turning the semantic fixture into `API -> repo-service -> Prisma/OpenAI`
+- `pnpm test:unit` passed with second-order flow inference coverage included (`55 passed`)
+- `pnpm lint` passed after the second-order flow slice
+- `pnpm build` passed with the updated analysis cache version `2026-04-20-second-order-flow-v1`
+- `pnpm test:unit -- result-workspace-model analysis-quality-guards semantic-analysis` passed after adding indirect `Code` fallback service-hop hints and Logic tie-break guards
+- `pnpm test:unit` passed with the new unclassified service-hop fixture and Logic tie-break regression (`57 passed`)
+- `pnpm lint` passed after adding `inferenceIdsContain` live regression expectations
+- `pnpm build` passed with the current backend semantic/regression updates
+- `pnpm exec tsc --noEmit` passed after build with the current analyzer/test-script changes
+- `node scripts/check-analysis-regression.mjs` passed on `http://localhost:3000`, including the new `sourcewizard-ai/react-ai-agent-chat-sdk` API-to-Logic live case
+- `pnpm test:unit -- analyzer-fixtures client-cache` passed after adding `analysis.learning` coverage for stack glossary, usage guide, preview signals, and cache compatibility
+- `pnpm test:unit` passed with the new learning-guide fixture coverage included (`58 passed`)
+- `pnpm exec tsc --noEmit` passed after adding `lib/analysis/learning.ts` and the additive `analysis.learning` schema
+- `pnpm lint` passed after the learning-first backend output slice
+- `pnpm build` passed with the new beginner-comprehension backend payload
+- `pnpm test:unit -- analyzer-fixtures client-cache` passed again after adding focus-root README/package support, preview filtering, `analysis.coverage`, and broader glossary coverage (`60 passed`)
+- `pnpm test:unit` passed with the new workspace learning and structured coverage fixtures (`60 passed`)
+- `pnpm exec tsc --noEmit` passed after extending `RepoPreviewImage` and adding `RepoAnalysis.coverage`
+- `pnpm lint` passed after refining preview ranking and session cache versioning
+- `pnpm build` passed with the hardened learning payload and focus-root seeded content fetch
+- `pnpm test:unit -- analyzer-fixtures` passed after teaching usage extraction to keep root workspace-runner commands (`turbo`, `pnpm --filter`, `nx`) and preferring canonical app homepage over storybook/docs links (`61 passed`)
+- `pnpm test:unit` passed with the new workspace-runner fixture coverage included (`61 passed`)
+- `pnpm exec tsc --noEmit` passed after adding `preferredScriptCommand` and deploy scoring refinements
+- `pnpm lint` passed after the workspace-runner/deploy canonicalization slice
+- `pnpm build` passed with the updated learning heuristics
+- `pnpm test:unit -- analyzer-fixtures` passed after adding readme-only official-site and docs-noise preview fixtures (`63 passed`)
+- `pnpm test:unit` passed after aligning stale left-panel label expectations with the current UI copy (`63 passed`)
+- `pnpm exec tsc --noEmit` passed after adding section-aware README link extraction and stricter vendor/docs deploy penalties
+- `pnpm lint` passed after the preview false-positive hardening slice
+- `pnpm build` passed after the section-aware preview scoring changes
+- `ANALYZE_BASE_URL=http://127.0.0.1:3983 node scripts/check-analysis-regression.mjs` passed with live expectations for `openai/openai-quickstart-node`, `vercel/next-learn`, `calcom/cal.com`, `supabase/supabase`, `tailwindlabs/headlessui`, `sourcewizard-ai/react-ai-agent-chat-sdk`
+- `pnpm exec tsc --noEmit` passed after adding `AnalysisResult`, owner analysis types, and owner URL routing
+- `pnpm test:unit` passed with new `owner-analysis` and owner URL validation coverage included (`66 passed`)
+- `pnpm lint` passed after adding `components/owner-workspace.tsx` and owner-target client/cache plumbing
+- `pnpm build` passed with the owner result screen and automatic target routing
+- `curl -s -X POST http://127.0.0.1:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/openai"}' | jq ...` returned `kind = "owner"`, `owner = "openai"`, representative repos, and `OWNER_REPO_SAMPLE_LIMIT`
+- `curl -s -X POST http://127.0.0.1:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/openai/openai-node"}' | jq ...` still returned `kind = "repo"` and the existing repo analysis payload
+- owner 분석은 repo metadata만으로 뽑으면 `starter/sdk/docs` 같은 레포를 product로 과소평가하기 쉽다. 상위 후보 몇 개만 README/package.json을 얕게 읽어도 category/stack/theme 품질이 눈에 띄게 좋아진다.
+- owner 추천 이유는 단일 문자열만 있으면 프론트가 다시 의미를 추정해야 한다. `featuredReasonDetails`, `beginnerReasonDetails`, `sampling` 같이 additive한 구조를 내려두면 UI가 badge/list/tooltip 어느 형태로도 재사용하기 쉽다.
+- owner 샘플링은 두 층으로 나뉜다. `sampledRepoCount`는 owner metadata 요약에 포함된 repo 수(보통 최대 100개)이고, `enrichedRepoCount`는 그중 README/package.json을 얕게 읽은 후보 수다. 현재는 `GITHUB_TOKEN`이 있으면 최대 8개 repo, 없으면 최대 3개 repo만 enrichment 대상으로 잡는다.
+- `analysis.learning.usage`는 문자열 배열만으로는 “무슨 명령인지” 설명이 부족하다. `details[{kind, source, scope, explanation}]`를 같이 내려주면 preview/usage UI가 텍스트 재추론 없이 바로 서사를 만들 수 있다.
+- deploy preview는 URL 하나만 내려주면 신뢰도 판단을 프론트가 다시 해야 한다. `deployConfidence`와 `deployRationale`를 같이 주면 `확실한 공식 미리보기`와 `보수적 fallback 링크`를 시각적으로 구분하기 쉬워진다.
+- live regression 스크립트는 이제 owner 케이스도 같은 `/api/analyze` 경로에서 검증한다. 현재 공개 smoke는 `tailwindlabs`(org)와 `developit`(user)을 기준으로 `kind/commonStacks/keyThemes/featured/beginner` 최소 기대치와 `enrichedRepoCount` budget 범위를 확인한다.
+- `analysis.learning.environment`는 learning payload 안의 독립 섹션으로 두는 편이 맞다. stack glossary/usage/preview와 같은 계층에서 `런타임 / 컨테이너 / 하드웨어 / 외부 서비스 / 배포 타깃`을 사실 기반으로 보여주면, 초보자가 “내 환경에서 돌아가나?”를 AI 없이 먼저 판단할 수 있다.
+- 런타임 source attribution은 실제 추출 파일과 1:1로 맞춰야 한다. `.node-version`, `Pipfile`, `rust-toolchain`, `deno.json`을 기존 source 값에 억지로 합치면 근거가 흐려진다.
+- root/focus root만 보면 `n8n` 같은 모노레포의 Docker/compose 신호를 놓친다. 환경 파일 탐색은 basename 기준 nested candidate를 소수만 추가 fetch하는 방식이 현실적이다.
+- 환경 support fetch는 이제 `.env.example/.env.sample/.env.template/.env.local.example`와 compose override 파일까지 포함한다. 모노레포에서 root/focus 밖 `docker/` 아래에 있는 실행 힌트까지 끌어오기 위한 최소 확장이다.
+- path-based 서비스 추론은 필요하지만, 전체 경로를 무차별 스캔하면 `github/gitignore -> Redis 필요` 같은 false positive가 생긴다. `docker|deploy|config|db|migrations|scaling` 같은 인프라/설정 맥락 경로로 제한해야 한다.
+- 현재 environment confidence 규칙은 다음이 가장 실용적이다: non-README source 2개 이상이면 `high`, 1개면 `medium`, README only면 `low`.
+- environment 외부 서비스는 이제 `servicesRequired`와 `servicesOptional`로 분리한다. `required`는 schema/compose/direct semantic usage처럼 실행에 직접 연결된 신호만 쓰고, `optional`은 dependency-only, nested compose, observability 같은 약한 신호를 담는다.
+- 대표 Dockerfile/compose 선택은 전체 후보를 다 합치지 않고 점수화해서 하나를 고른다. `docker/`, `infra/`, focus scope, repo 이름 매치, EXPOSE/CMD/ports`는 가산하고, `.devcontainer`, `.github`, `base/runner/distroless`, test/example 경로는 감점한다.
+- direct env example에서 읽힌 서비스는 이제 `serviceNamesFromEnvTexts()`로 따로 분류한다. DB/cache는 direct env만으로도 required 후보에 올리고, OpenAI/Anthropic/Stripe/Supabase/Firebase는 semantic/dependency corroboration이 있을 때만 required로 승격한다.
+- README hardware note는 단순 첫 줄 선택이 아니라 concrete requirement 중심으로 정렬한다. `CUDA/GPU`, `8GB RAM`, `minimum/recommended/권장` 같은 표현이 있는 문장을 앞세우고, install/setup 잡음은 감점한다.
+- usage explanation은 script body를 같이 본다. 그래서 `docker compose up`, `next dev`, `vite`, `uvicorn`, `cargo run`, `go run` 같은 실행 명령은 generic copy 대신 더 구체적인 설명을 내려줄 수 있다.
+- preview deploy rationale은 provider config(`vercel.json`, `fly.toml` 등)와 URL provider가 맞으면 근거에 그 사실을 추가한다. README 링크만으로 판단하는 것보다 deterministic signal이 하나 더 붙는다.
+- smoke QA 기준 현재 결과:
+  - `n8n-io/n8n`: Node runtime, nested Docker/compose 감지. 외부 서비스는 `required=[]`, `optional=[PostgreSQL, Redis, Sentry, MySQL]`
+  - `comfyanonymous/ComfyUI`: Python runtime, GPU/CUDA README 신호 감지
+  - `ahmedkhaleel2004/gitdiagram`: Node/Python runtime, Docker/compose, Vercel 감지. 외부 서비스는 `required=[OpenAI]`, `optional=[]`
+  - `github/gitignore`: environment payload가 비어 있고 서비스 false positive도 없음
+- `pnpm exec vitest run tests/owner-analysis.test.ts` passed after adding shallow owner enrichment coverage
+- `pnpm exec tsc --noEmit` passed after extending owner/learning additive schemas with structured reasons and deploy confidence
+- `pnpm test:unit` passed with owner enrichment, usage detail, and preview confidence coverage included (`67 passed`)
+- `node scripts/check-analysis-regression.mjs` passed on `http://localhost:3000`, including the new owner smoke case for `tailwindlabs`
+- `pnpm lint` passed after the owner/learning contract refinement
+- `pnpm build` passed after extending preview confidence, usage explanations, and owner sampling heuristics
+- `curl -s -X POST http://127.0.0.1:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/tailwindlabs","forceRefresh":true}' | jq ...` returned `kind = "owner"`, structured featured/beginner reason details, and `sampling.readmeSampled/packageJsonSampled`
+- `pnpm exec vitest run tests/owner-analysis.test.ts` passed after adding the zero-public-repo warning guard regression
+- `node scripts/check-analysis-regression.mjs` passed again on `http://localhost:3000`, now including the user-owner smoke case for `https://github.com/developit`
+- `curl -s -X POST http://127.0.0.1:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/developit","forceRefresh":true}' | jq ...` returned `kind = "owner"`, `ownerTypeLabel = "사용자"`, stable `JavaScript/TypeScript` stack signals, `라이브러리/UI` themes, and `OWNER_REPO_SAMPLE_LIMIT`
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/result-view-model.test.ts tests/client-cache.test.ts` passed after adding environment extraction coverage (`39 passed`)
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/client-cache.test.ts` passed after splitting environment services into required vs optional (`33 passed`)
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/client-cache.test.ts tests/result-view-model.test.ts` passed after adding monorepo env promotion, representative container selection, hardware note ranking, and preview/usage explanation regressions (`44 passed`)
+- `pnpm test:unit` passed after wiring environment extraction and learning-tab visibility (`72 passed`)
+- `pnpm exec tsc --noEmit` passed after extending `RepoLearningGuide` with `environment`, bumping schema/cache versions, and broadening env source unions
+- `pnpm lint` passed after adding the `EnvironmentBlock` UI and environment heuristics
+- `pnpm build` passed after the environment guide slice
+- `pnpm test:regression:live` passed on `http://localhost:3000` after the latest backend heuristic pass
+- `curl -s -X POST http://127.0.0.1:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/n8n-io/n8n","forceRefresh":true}' | jq ...` returned Node runtime, nested Docker/compose signals, and `PostgreSQL/Redis` service hints
+- `curl -s -X POST http://127.0.0.1:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/comfyanonymous/ComfyUI","forceRefresh":true}' | jq ...` returned Python runtime plus GPU/CUDA README hints
+- `curl -s -X POST http://127.0.0.1:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/ahmedkhaleel2004/gitdiagram","forceRefresh":true}' | jq ...` returned mixed runtime/container/deploy signals for a lighter app repo
+- `curl -s -X POST http://127.0.0.1:3000/api/analyze -H 'Content-Type: application/json' -d '{"repoUrl":"https://github.com/github/gitignore","forceRefresh":true}' | jq ...` returned an empty environment payload, confirming the section can stay hidden when there is no signal
+- `node - <<'NODE' ... NODE` against `http://127.0.0.1:3000/api/analyze` showed the current real-repo shape after the latest pass:
+  - `n8n-io/n8n` => focusRoot `packages/frontend/editor-ui`, baseImage `node:${NODE_VERSION}-alpine`, `required=[]`, `optional=[PostgreSQL, Redis, Anthropic, OpenAI, Sentry, MySQL]`
+  - `ahmedkhaleel2004/gitdiagram` => baseImage `oven/bun:1.3.11`, `composeServices=[api]`, `required=[OpenAI]`
+  - `comfyanonymous/ComfyUI` => `gpuRequired=true`, `deployUrl=https://comfyanonymous.github.io/ComfyUI_examples/`
+  - `github/gitignore` => environment/preview empty, confidence `low`
+- `node - <<'NODE' ... NODE` against `http://127.0.0.1:3971/api/analyze` confirmed the stricter service split on live repos:
+  - `n8n-io/n8n` => `required=[]`, `optional=[PostgreSQL, Redis, Sentry, MySQL]`
+  - `ahmedkhaleel2004/gitdiagram` => `required=[OpenAI]`, `optional=[]`
+  - `github/gitignore` => `required=[]`, `optional=[]`
+
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/client-cache.test.ts tests/compare-view-model.test.ts tests/compare-diagnostics.test.ts tests/compare-client.test.ts` passed after the README-core filtering and architecture-note fixes (`52 passed`)
+- `pnpm lint` passed after the README-core heuristic updates
+- `pnpm exec tsc --noEmit` passed with the current backend + mixed frontend tree
+- `node scripts/check-analysis-regression.mjs` passed on `http://localhost:3000` after updating README-core expectations for `next-learn` and `sourcewizard-ai/react-ai-agent-chat-sdk`
+- `pnpm build` passed after the README-core extraction refinements
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/client-cache.test.ts tests/compare-view-model.test.ts tests/compare-diagnostics.test.ts tests/compare-client.test.ts` passed after adding stack glossary usage/example-path regressions (`53 passed`)
+- `pnpm lint` passed after the stack glossary contract extension
+- `pnpm exec tsc --noEmit` passed after extending `RepoStackGlossaryItem` and cache normalization
+- `pnpm build` passed after the stack glossary enrichment slice
+- live smoke QA on `http://127.0.0.1:3000/api/analyze` confirmed the scoped stack-glossary behavior:
+  - `vercel/next-learn` => `Next.js` example path now stays inside `dashboard/final-example` instead of leaking into sibling tutorial apps
+  - `sourcewizard-ai/react-ai-agent-chat-sdk` => unrelated `Vite` signal from sibling examples no longer appears in the focused `examples/chat-page` glossary
+  - `n8n-io/n8n` => evidence-less `React` row is now hidden, while `Vite` and `Vue` surface from the focused workspace package/config
+  - `openai/openai-quickstart-node` and `pytorch/examples` still return stable repo-specific glossary rows without regressions
+
+## Next
+
+- Claude: owner 결과 화면을 `overview -> featured repos -> beginner repos -> latest` 정보 위계로 재정리하고, 새 `featuredReasonDetails / beginnerReasonDetails / sampling` 필드를 어떻게 배치할지 결정한다.
+- Claude: preview/coverage/usage UI 리파인에서 `learning.usage.details`, `learning.preview.deployConfidence`, `learning.preview.deployRationale`를 활용해 “왜 이 명령/링크를 믿는지”를 더 짧게 보여준다.
+- Codex: owner smoke set은 이제 `tailwindlabs`(org) + `developit`(user) 두 축이 있다. 더 늘릴지 여부는 GitHub rate-limit 비용을 보고 판단한다.
+- Codex: unauthenticated 환경에서 owner enrichment 후보 수 `3`이 너무 보수적인지, 아니면 추가 완화가 필요한지 실제 운영 데이터로 다시 본다.
+- `pnpm exec tsc --noEmit` passed after extending owner repo summaries with `environment` snapshots and broadening owner enrichment fetch to include Python manifests plus Docker/compose signals
+- `pnpm exec vitest run tests/owner-analysis.test.ts tests/analyzer-fixtures.test.ts tests/client-cache.test.ts` passed after adding prompt-② regression fixtures (`44 passed`)
+- `pnpm lint` passed after the owner environment snapshot backend slice
+- `pnpm build` passed after wiring owner env snapshot payloads into the analysis response
+- `node - <<'NODE' ... NODE` against `http://127.0.0.1:3000/api/analyze` validated the latest backend changes:
+  - `pytorch/examples` => Python runtime now detected from `requirements.txt`
+  - `n8n-io/n8n` => README deploy signal now yields `deployTargets=[Docker]`
+  - `ahmedkhaleel2004/gitdiagram` => README storage/service notes now land in `servicesRequired=[OpenAI, Cloudflare R2, Upstash Redis, PostgreSQL]`
+  - `github/gitignore` => environment payload remains empty, confirming no regression
+- `node - <<'NODE' ... NODE` against owner URLs confirmed new owner-card environment snapshots are present on featured/beginner repos:
+  - `vercel` => lightweight Node/Vercel hints on sampled repos
+  - `pytorch` => `pytorch/pytorch` shows `Python 3.10+ · Docker · GPU 필요`
+  - `openai` => sampled repos expose Node/Python pills where shallow signals exist
+  - `way-po-int` => mixed Node/Java + Docker/PostgreSQL hints flow through owner summaries
+- `pnpm exec tsc --noEmit` passed after improving owner featured ranking heuristics, adding root deploy-config sampling for owner enrichment, and normalizing client-side cached repo environment payloads
+- `pnpm exec vitest run tests/owner-analysis.test.ts tests/analyzer-fixtures.test.ts tests/client-cache.test.ts` passed after adding regressions for stale-research-vs-official-owner ranking, deploy-config-derived owner targets, OpenAI Gym false positives, and cache normalization (`48 passed`)
+- `pnpm lint` passed after the owner-ranking + cache-compat slice
+- `pnpm build` passed after wiring owner deploy config paths and stricter README service-note filters
+- `node - <<'NODE' ... NODE` against `http://127.0.0.1:3000/api/analyze` confirmed the latest ranking/quality changes:
+  - `openai` owner => featured repos now start with `openai/openai-node`, `openai/openai-python` instead of stale model repos
+  - `vercel` owner => featured repos now surface `vercel/vercel`, `vercel/ai` ahead of generic older repos, with deploy targets where available
+  - `pytorch/examples` => environment summary is now `Python · GPU 필요`, and the prior false-positive `servicesRequired=[OpenAI]` is gone
+  - `way-po-int` owner => root deploy config sampling lifts Vercel targets into featured repo environment snapshots
+- `pnpm exec tsc --noEmit` passed after adding the compare-mode pure logic contract (`components/compare-view-model.ts`) with repo-only validation and stack/layer/environment diff builders
+- `pnpm exec vitest run tests/compare-view-model.test.ts tests/owner-analysis.test.ts tests/analyzer-fixtures.test.ts tests/client-cache.test.ts` passed after adding compare regressions for repo-only validation, same-URL warnings, runtime/service/layer diffing, and code fallback rows (`52 passed`)
+- `pnpm lint` passed after the compare logic slice
+- `pnpm build` passed with the compare logic file and tests added, without touching the existing single-repo routes or result workspace
+- `pnpm exec tsc --noEmit` passed after extracting compare core logic into `lib/analysis/compare.ts`, adding `lib/analysis/compare-client.ts`, and exposing `requestTargetAnalysis(..., { forceRefresh })` for compare-mode reuse
+- `pnpm exec vitest run tests/compare-view-model.test.ts tests/compare-client.test.ts tests/owner-analysis.test.ts tests/analyzer-fixtures.test.ts tests/client-cache.test.ts` passed after adding compare pair-cache and partial-failure regressions (`56 passed`)
+- `pnpm lint` passed after the compare pair helper slice
+- `pnpm build` passed with a temporary `CompareScreen` shim so the existing `/compare` route compiles while Claude replaces it with the real compare UI
+- `pnpm exec tsc --noEmit` passed after adding `lib/analysis/compare-diagnostics.ts`; the helper reduces `CompareDiff` into small counts/modes/previews so the eventual compare UI can log or expose stable diagnostics without re-deriving facts in multiple places
+- `pnpm exec vitest run tests/compare-diagnostics.test.ts tests/compare-view-model.test.ts tests/compare-client.test.ts tests/owner-analysis.test.ts tests/analyzer-fixtures.test.ts tests/client-cache.test.ts` passed after adding diagnostic regression coverage for docker/deploy modes, preview truncation, and formatted trace lines (`58 passed`)
+- `node scripts/check-compare-regression.mjs` passed against the live local analyze server. Covered cases: `vercel/next.js ↔ vercel/turbo`, `gitdiagram ↔ n8n`, `NostalgiaForInfinity ↔ openai-python`, owner URL rejection shape, and same-URL warning retention
+- `pnpm lint` and `pnpm build` both still passed after adding the compare diagnostics helper, live compare smoke script, and `package.json` alias `test:compare:live`
+- `pnpm exec tsc --noEmit` passed after extending `RepoLearningGuide` with `identity` and `readmeCore`, wiring identity extraction into `buildLearningGuide`, and normalizing stale cached repo payloads that predate the new fields
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/client-cache.test.ts tests/compare-view-model.test.ts tests/compare-diagnostics.test.ts tests/compare-client.test.ts` passed after adding regressions for:
+  - beginner-facing identity fields (`plainTitle`, `startHere`, `readOrder`, `trust`)
+  - README-core fallback extraction (`summary`, `quickstart`, filtered external links)
+  - client cache normalization when older envelopes are missing `identity`, `readmeCore`, and `servicesOptional`
+- `pnpm lint` and `pnpm build` still passed after the identity/readme-core slice, so Claude can now consume stable backend fields for the Result IA v2 header and README tab without further schema work
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts` passed after adding subtitle regressions for README-summary translation (`learningGuideFixture`), English README filtering (`readmeNarrativeFilteringFixture`), and tutorial/example fallback (`exampleCollectionFixture`)
+- `pnpm exec tsc --noEmit`, `pnpm lint`, and `pnpm build` all passed after the subtitle compression slice
+- live smoke on `http://127.0.0.1:3100/api/analyze` with `forceRefresh=true` confirmed:
+  - `vercel/next-learn` => `예제 앱과 참고 코드를 함께 모아 둔 학습용 저장소입니다.`
+  - `ahmedkhaleel2004/gitdiagram` => `공개 GitHub 레포를 구조와 설명 중심으로 빠르게 이해하게 돕는 도구입니다.`
+  - `n8n-io/n8n` => `자동화 흐름과 여러 연동 작업을 관리하는 서비스입니다.`
+- `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/client-cache.test.ts` passed after adding regressions for:
+  - package-based service monorepo classification
+  - multi-surface product repo not being treated as an example collection
+- `pnpm lint` passed after the project-type/stack-summary hardening slice
+- `pnpm build` passed after the heuristic updates
+- standalone `pnpm exec tsc --noEmit` passed after build completion; parallel `tsc` still shows the known `.next/types` false negative
+- live smoke on `http://127.0.0.1:3100/api/analyze` with `forceRefresh=true` now shows:
+  - `n8n-io/n8n` => `projectType=모노레포 웹 플랫폼`, `stackSummary=여러 앱과 공용 패키지를 함께 운영하는 서비스 플랫폼`
+  - `ahmedkhaleel2004/gitdiagram` => `projectType=풀스택 웹앱`, `stackSummary=AI 기능이 들어간 풀스택 웹앱`
+  - `vercel/next-learn` => existing `학습용 예제 저장소` classification preserved
+- top-level semantic integration 승격은 이제 primary-flow 기준이다. representative code 어딘가에 외부 SDK가 보이더라도 `summary.keyFeatures`는 우선 `대표 요청 흐름 -> API -> 하위 로직`에 연결된 integration만 올리고, 옆가지 integration은 facts/evidence 쪽에 남긴다.
+- observability-only 외부 신호는 더 보수적으로 다룬다. `Sentry`만 보이는 경우에는 one-liner surface와 top-level key feature로 올리지 않고, stronger integration이 있을 때도 계속 뒤로 밀린다.
+- one-liner는 README/identity 첫 문장과 semantic addon이 같은 브랜드를 반복할 때 plain addon을 숨긴다. 다만 `/api/... 요청 뒤 ...`처럼 흐름 정보를 추가하는 addon은 유지한다.
+- `pnpm exec vitest run tests/semantic-analysis.test.ts tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts` passed after:
+  - off-flow `OpenAI` integration이 top-level key features로 승격되지 않는 회귀 테스트 추가
+  - 첫 문장에서 이미 `OpenAI`를 말했을 때 plain semantic addon을 숨기는 회귀 테스트 추가
+  - 같은 브랜드라도 `/api/analyze 요청 뒤 ...`처럼 흐름 맥락이 붙으면 addon을 유지하는 회귀 테스트 추가
+- `pnpm lint`, `pnpm build`, `pnpm exec tsc --noEmit` all passed after the semantic-promotion refinement slice
+- live smoke on `http://127.0.0.1:3100/api/analyze` with `forceRefresh=true` confirmed:
+  - `calcom/cal.com` => subtitle `일정 선택, 예약 생성, 관리 흐름을 서비스 관점에서 따라가며 읽을 수 있습니다.`, key features `Prisma 연결 확인`, `Stripe 연동 확인`, `워크스페이스 105개 감지`, `공용 패키지 + 앱 분리 구조`, `페이지 기반 진입 구조`
+  - `n8n-io/n8n` => subtitle `자동화 흐름과 여러 연동 작업을 관리하는 서비스입니다.`, key features `TypeORM 연결 확인`, `워크스페이스 63개 감지`, `공용 패키지 + 앱 분리 구조`, `재사용 컴포넌트 구조`, `서버 요청 처리`
+  - `ahmedkhaleel2004/gitdiagram` => subtitle `공개 GitHub 레포를 구조와 설명 중심으로 빠르게 이해하게 돕는 도구입니다.`, key features `OpenAI 연동 확인`, `페이지 기반 진입 구조`, `재사용 컴포넌트 구조`, `서버 요청 처리`, `외부 서비스 연동`
+  - `openai/openai-quickstart-node` => subtitle `예제 앱과 참고 코드를 따라 보며 구조를 익히는 학습용 저장소입니다.`, one-liner still keeps `OpenAI 연동` because the first sentence is generic and does not already repeat the brand
+- semantic external 승격은 이제 confidence tier를 갖는다.
+  - repo-wide fallback 승격: `OpenAI`, `Anthropic`, `Stripe`, `Clerk`
+  - flow-linked일 때만 승격: `GitHub`, `Slack`, `Resend`
+  - top summary 비승격: `Sentry`
+- generic top summary 중복 제거도 함께 적용했다.
+  - specific external feature(`OpenAI 연동 확인` 등)가 있으면 `외부 서비스 연동` 제거
+  - specific DB feature(`Prisma 연결 확인`, `TypeORM 연결 확인` 등)가 있으면 `데이터 저장/조회` 제거
+  - 그 결과 남는 슬롯은 `페이지 기반 진입 구조`, `공용 패키지 + 앱 분리 구조`, `재사용 컴포넌트 구조` 같은 구조 신호가 차지한다.
+- `tests/semantic-analysis.test.ts`에 추가한 회귀:
+  - no-flow `GitHub/Slack/Resend` utility 패키지에서는 facts에는 서비스명이 남지만 one-liner/keyFeatures로는 승격되지 않음
+  - `Prisma/OpenAI` 같이 specific integration이 있으면 `데이터 저장/조회`, `외부 서비스 연동` generic 요약은 빠짐
+- `scripts/check-analysis-regression.mjs`는 이제 semantic summary drift도 본다.
+  - 지원 expectation: `keyFeaturesContain`, `keyFeaturesAbsent`, `oneLinerContain`, `oneLinerAbsent`
+  - regression set 확대: `n8n`, `gitdiagram`, `openai-quickstart-node`, `cal.com`
+- `ANALYZE_BASE_URL=http://localhost:3100 node scripts/check-analysis-regression.mjs` passed after the expanded regression slice.
+  - `openai-quickstart-node`: `OpenAI 연동 확인` 유지, `외부 서비스 연동` 제거
+  - `cal.com`: `Prisma 연결 확인`, `Stripe 연동 확인` 유지, `외부 서비스 연동`/`데이터 저장/조회` 제거
+  - `n8n`: `TypeORM 연결 확인` 유지, `Sentry 연동` 미노출
+  - `gitdiagram`: `OpenAI 연동 확인` 유지, `외부 서비스 연동` 제거
+- `radix-ui/primitives`는 live에서 여전히 `컴포넌트 라이브러리 또는 디자인 시스템` vs `모노레포 웹 플랫폼` 경계에 걸린다. 이번 slice 목적은 semantic summary라 regression case는 둘 다 허용하도록 완화했고, project-type heuristic 재조정은 별도 우선순위로 남긴다.
+- current slice: library/component-library drift hardening + self-branded semantic suppression
+  - `lib/analysis/heuristics.ts`
+    - primary app workspace 판정은 이제 path-name-only가 아니라 actual route/UI/API surface 기반
+    - nested package roots are penalized when a parent library workspace also exists
+    - component-library dominance requires stronger evidence, so repos with a stray `packages/ui` no longer auto-flip to design-system classification
+    - `detectProjectType(...)` now prefers strong component-library classification before monorepo fallback
+  - `lib/analysis/analyzer.ts`
+    - package-focused library stack detection now excludes root web configs and nested `example/demo/docs/website` subtrees
+    - self-branded semantic promotions for `Clerk`, `Firebase`, `Supabase` are removed from top summary on library/example-style repos while retaining low-level semantic facts
+  - `lib/analysis/learning.ts`
+    - glossary/example-path stack scoping matches the new package-focused library boundary, so `supabase-js` no longer inherits `Next.js` / `Tailwind CSS` from nested examples
+  - tests added:
+    - inline semantic regressions for self-branded `Supabase` / `Clerk` library repos
+    - inline analyzer regressions for Radix-like component-library monorepo, package-local example leakage, and `GitHub Pages` staying in preview hosting instead of semantic summary
+  - live repo validation now passes with the tightened expectations:
+    - `radix-ui/primitives` => `컴포넌트 라이브러리 또는 디자인 시스템`, focus root `packages/core/primitive`
+    - `clerk/javascript` => `라이브러리 또는 SDK`, no `Clerk 연동 확인` in top summary
+    - `firebase/firebase-js-sdk` => no `Firebase 연결 확인` in top summary
+    - `supabase/supabase-js` => `라이브러리 또는 SDK`, no `Supabase 연결 확인`, stack stripped to `TypeScript/Node.js/Vite`
+- validation for the current slice:
+  - `pnpm exec vitest run tests/semantic-analysis.test.ts tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts`
+  - `pnpm lint`
+  - `pnpm exec tsc --noEmit`
+  - `ANALYZE_BASE_URL=http://localhost:3000 node scripts/check-analysis-regression.mjs`
+- next backend restart point:
+  - trim remaining structural feature noise on SDK repos whose focused package still inherits page/component signals from bundled examples
+  - audit library focus-root choice quality on SDK monorepos such as `clerk/javascript`, where `packages/ui` may not be the best representative public surface
+- latest completion pass:
+  - tightened `scripts/analysis-regression-cases.json` so `firebase/firebase-js-sdk` now only accepts `라이브러리 또는 SDK`
+  - re-ran:
+    - `pnpm exec vitest run tests/semantic-analysis.test.ts tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts`
+    - `pnpm lint`
+    - `ANALYZE_BASE_URL=http://localhost:3000 node scripts/check-analysis-regression.mjs`
+    - `pnpm build`
+    - standalone `pnpm exec tsc --noEmit`
+  - all of the above passed
+  - live regression confirms:
+    - `firebase/firebase-js-sdk` => `projectType=라이브러리 또는 SDK`, `focusRoot=packages/auth`
+    - `clerk/javascript` => no `Clerk 연동 확인`
+    - `supabase/supabase-js` => no `Supabase 연결 확인`, no `Next.js` / `Tailwind CSS` stack leakage
+  - build-only unblockers fixed while closing the slice:
+    - removed the stale `mine` prop handoff in `/app/compare/page.tsx`
+    - removed the stale `MineSide` import in `/components/compare-screen.tsx`
+- latest completion pass after that:
+  - `buildKeyFeatures(...)` now accepts scoped `signalPaths`, and analyzer passes `displayStackPaths(...)` into that signal path for summary feature generation
+  - effect: package-focused SDK summaries no longer inherit route/component feature labels from bundled demo apps under the focused package
+  - tightened regression:
+    - `tests/analyzer-fixtures.test.ts` now asserts the Supabase-like SDK fixture does not emit `페이지 기반 진입 구조` / `재사용 컴포넌트 구조`
+    - `scripts/analysis-regression-cases.json` now asserts the same absence for live `supabase/supabase-js`
+  - compare cleanup finished to restore clean lint/build:
+    - removed dead `mine` URL-sync state from `/components/compare-screen.tsx`
+    - removed dead local `mine` state from `/components/compare-workspace.tsx`
+  - reran and passed:
+    - `pnpm exec vitest run tests/semantic-analysis.test.ts tests/analyzer-fixtures.test.ts`
+    - `pnpm exec vitest run tests/semantic-analysis.test.ts tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts`
+    - `pnpm lint`
+    - `ANALYZE_BASE_URL=http://localhost:3000 node scripts/check-analysis-regression.mjs`
+    - `pnpm build`
+    - standalone `pnpm exec tsc --noEmit`
+  - live regression snapshot of the key target:
+    - `supabase/supabase-js` => `projectType=라이브러리 또는 SDK`, `focusRoot=packages/core/realtime-js`, `keyFeatures=["라이브러리 진입점"]`
+- latest completion pass after that:
+  - library/design-system residual-noise slice completed
+  - `lib/analysis/heuristics.ts`
+    - `DB_PATTERN` is now narrower and only treats actual DB-like directories/files as DB signals
+    - generic TS code migrations such as `src/migrations/*.ts` and non-DB `registry/schema.ts` no longer create a fake DB layer
+    - `detectStack(...)` now adds `Vue` when the repo actually carries Vue markers, so Vue component libraries stop looking unsupported by default
+  - `lib/analysis/analyzer.ts`
+    - benign library/component coverage gaps now treat `cli` the same as `entry/other`, so design-system CLI packages do not emit `LAYER_CLASSIFICATION_GAP` just because command/helper files remain in `Code`
+    - partial coverage copy for that benign case now says `보조 코드 ... Code 범위` instead of overclaiming `공용 코드`
+  - `lib/analysis/learning.ts`
+    - `plainTitleFromSignals(...)` now prefers design-system/component-library wording before generic `web app` wording
+    - effect: `radix-ui/primitives`, `headlessui`, `mui/material-ui`, `shadcn-ui/ui` now all land on a design-system-style plain title instead of generic browser-app wording
+  - tests added:
+    - inline regression for shadcn-like CLI package not creating DB signals
+    - inline regression for Vue stack support
+    - inline regression for design-system plain title precedence
+  - live repo validation now confirms:
+    - `shadcn-ui/ui` => no `데이터 저장/조회`, no `LAYER_CLASSIFICATION_GAP`, layers collapse to `Logic` for the focused CLI package
+    - `tailwindlabs/headlessui` => stack `Vue, TypeScript`, no `SUPPORTED_STACK_GAP`, plain title is design-system wording
+    - `radix-ui/primitives` => plain title is design-system wording, no warning regression
+  - reran and passed:
+    - `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts tests/semantic-analysis.test.ts`
+    - `ANALYZE_BASE_URL=http://localhost:3000 node scripts/check-analysis-regression.mjs`
+    - `pnpm lint`
+    - `pnpm build`
+    - standalone `pnpm exec tsc --noEmit`
+  - next backend restart point:
+    - investigate remaining limited-mode `LAYER_CLASSIFICATION_GAP` on real app monorepos such as `n8n`
+    - audit whether package-focused component-library focus-root selection should normalize framework flavor choice when multiple public package variants exist (`headlessui` currently lands on Vue)
+- latest completion pass after that:
+  - real app monorepo limited-mode warning refinement completed
+  - `lib/analysis/heuristics.ts`
+    - added `SUPPORT_LOGIC_PATTERN` so frontend bootstrap/support files such as `app/init.ts`, `app/router.ts`, `app/polyfills.ts`, `app/types/*` are treated as Logic instead of falling into `Code`
+    - `.d.ts` files are no longer counted as code-like coverage targets
+  - `lib/analysis/analyzer.ts`
+    - `LAYER_CLASSIFICATION_GAP` suppression now also applies to large, otherwise well-classified results when all leftovers are benign (`entry/other/cli/src-root/root-file`) and semantic hints are empty
+    - practical effect: `n8n` no longer shows a scary structural warning just because limited-mode leaves bootstrap/support code in `Code`
+  - regression locking:
+    - `scripts/check-analysis-regression.mjs` now supports `warningsAbsent`
+    - live regression cases now explicitly lock:
+      - `n8n` => no `LAYER_CLASSIFICATION_GAP`
+      - `headlessui` => no `SUPPORTED_STACK_GAP`, stack contains `Vue`, identity title contains `디자인 시스템`
+      - `radix-ui/primitives` => identity title contains `디자인 시스템`
+      - `shadcn-ui/ui` => no `LAYER_CLASSIFICATION_GAP`, no `데이터 저장/조회`
+  - preview false-positive cleanup completed
+  - `lib/analysis/learning.ts`
+    - `isLikelyDeployUrl(...)` now rejects badge/coverage/status/image URLs and hosts such as `coveralls.io`, `codecov.io`, `shields.io`
+    - practical effect: `firebase/firebase-js-sdk` no longer reports a badge SVG as `deployUrl`
+  - tests added:
+    - inline limited-mode frontend-workspace fixture proving benign support leftovers do not surface `LAYER_CLASSIFICATION_GAP`
+    - inline preview fixture proving badge/coverage SVG URLs do not become deploy previews
+  - reran and passed:
+    - `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts tests/semantic-analysis.test.ts`
+    - `ANALYZE_BASE_URL=http://localhost:3000 node scripts/check-analysis-regression.mjs`
+    - `pnpm lint`
+    - `pnpm build`
+    - standalone `pnpm exec tsc --noEmit`
+  - live spot-checks:
+    - `n8n-io/n8n` => warnings `[]`, coverage still `limited`, unclassified reduced to benign support/entry files
+    - `firebase/firebase-js-sdk` => `preview.mode=none`, `deployUrl=null`
+  - next backend restart point:
+    - continue reducing limited-mode `Code` residue for frontend workspaces without overclassifying generic support files
+    - audit whether component-library focus-root choice should stay README-led or be normalized when multiple public framework packages are equally valid
+- latest follow-up after that:
+  - limited/full coverage residue was reduced again by aligning `summarizeLayerCoverage(...)` with the layer rules already used elsewhere.
+  - `lib/analysis/heuristics.ts`
+    - `logicBucket` now merges `signals.logicFiles`, `signals.cliFiles`, and `signals.libraryEntryFiles`, so coverage no longer disagrees with `layersForPath(...)` for files like `src/main.ts`, `src/index.ts`, or CLI entrypoints.
+    - `SUPPORT_LOGIC_PATTERN` now also recognizes frontend/library support folders that were still falling into raw `Code`:
+      - `app/constants/*`
+      - `app/plugins/*`
+      - `app/workers/*`
+      - `app/dev/*`
+      - `app/event-bus/*`
+      - `src/internal/*`
+      - `src/experiments/*`
+    - `LOGIC_PATTERN` now accepts `stores/` as well as `store/`.
+    - `test-utils/` directories are excluded from analysis coverage noise, and `jest.config.*` / `vitest.config.*` / `playwright.config.*` are treated as config files instead of residue.
+  - tests expanded:
+    - the existing frontend-workspace fixture now asserts that `src/main.ts`, plugin files, `app/stores/*`, and `app/event-bus/*` do not come back as `unclassifiedCodeSamples`
+    - a new component-library fixture proves `packages/@headlessui-vue/src/index.ts` and `src/internal/*` are absorbed into `Logic` instead of lingering in `Code`
+  - live outcomes after this slice:
+    - `n8n-io/n8n` => `warnings=[]`, `unclassifiedCodeFileCount=0`, focus root remains `packages/frontend/editor-ui`
+    - `tailwindlabs/headlessui` => focus root remains `packages/@headlessui-vue`, `src/index.ts` + `src/internal/*` no longer appear in residue, leftover residue is down to two root utility files (`src/keyboard.ts`, `src/mouse.ts`)
+    - decision: keep current README-led / representative-package focus-root selection for `headlessui`; the remaining residue does not justify a focus-root rewrite
+  - live regression locking was tightened again:
+    - `scripts/check-analysis-regression.mjs` now supports `unclassifiedCodeFileCountMax` and `unclassifiedCodeSamplesAbsent`
+    - regression cases now explicitly lock:
+      - `n8n` => `unclassifiedCodeFileCount <= 0`
+      - `headlessui` => `src/index.ts` and representative `src/internal/*` files stay out of `unclassifiedCodeSamples`
+  - validation results for this slice:
+    - passed:
+      - `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts tests/semantic-analysis.test.ts`
+      - `pnpm exec eslint lib/analysis/heuristics.ts tests/analyzer-fixtures.test.ts scripts/check-analysis-regression.mjs`
+      - `pnpm build`
+      - standalone `pnpm exec tsc --noEmit` after build
+      - targeted live checks:
+        - `POST /api/analyze` for `https://github.com/n8n-io/n8n`
+        - `POST /api/analyze` for `https://github.com/tailwindlabs/headlessui`
+    - blocked / environmental:
+      - full `pnpm lint` still fails on existing frontend files owned by Claude:
+        - `components/compare-env-drawer.tsx`
+        - `components/user-env.ts`
+        - plus one unused import warning in `components/compare-workspace.tsx`
+      - full live regression script is currently blocked by authenticated GitHub rate limiting on the unrelated owner case `https://github.com/developit`
+  - next backend restart point:
+    - decide whether to classify root-level library support utilities such as `src/keyboard.ts` / `src/mouse.ts` when enough other package-local logic signals exist
+    - continue backend-only result quality work around README summarization and beginner-facing compression, without taking over Claude-owned UI changes
+- latest follow-up after that:
+  - package-focused library/SDK residue was reduced again, this time for root support files, framework support folders, and bundled package demos.
+  - `lib/analysis/heuristics.ts`
+    - added `ROOT_SUPPORT_LOGIC_PATTERN` for package-local support modules that were repeatedly showing up as residue even though they are clearly not user-facing product layers:
+      - root files like `src/errors.ts`, `src/internal.ts`, `src/constants.ts`, `src/experimental.ts`, `src/keyboard.ts`, `src/mouse.ts`, `src/webhooks.ts`
+      - support folders like `src/server/*`, `src/mfa/*`, `src/client-boundary/*`, `src/app-router/*`, `src/runtime/*`, `src/platform_*/*`
+      - root support entries like `src/components.client.ts` / `src/components.server.ts`
+    - `collectSignals(...)`, `layersForPath(...)`, and Logic representative scoring all now use that pattern, so coverage and visible layers stay aligned.
+    - `CONFIG_PATTERN` now includes `tsup.config.*`, removing build-config noise from package-focused SDK results.
+    - scoped library/design-system coverage now drops nested support surfaces such as `focusRoot/demo/*`, `examples/*`, `playground/*`, `sandbox/*`, `website/*`, `docs/*` when the focused target is a library/design-system package. This keeps bundled demos from inflating beginner-facing residue.
+  - `lib/analysis/analyzer.ts`
+    - second-pass `buildLayers(...)` and `summarizeLayerCoverage(...)` now receive `projectType`, enabling the library-only scoped demo exclusion without changing global first-pass topology detection.
+  - tests expanded:
+    - the benign SDK gap fixture now expects zero uncovered files
+    - the Firebase-like SDK fixture now includes `src/mfa/*` and `src/platform_browser/*` and expects zero uncovered files
+    - the Clerk-like SDK fixture now includes root support files, `client-boundary/*`, `app-router/*`, `runtime/*`, and `tsup.config.ts`, all expected to stay out of residue
+    - the Vue headless-ui-style fixture now includes `src/keyboard.ts` / `src/mouse.ts` and expects both to stay out of residue
+  - live outcomes after this slice:
+    - `tailwindlabs/headlessui` => `unclassifiedCodeFileCount=0`
+    - `clerk/javascript` => `unclassifiedCodeFileCount=0`
+    - `firebase/firebase-js-sdk` => `unclassifiedCodeFileCount=0`
+  - regression locking tightened:
+    - live regression cases now lock `unclassifiedCodeFileCountMax: 0` for `headlessui`, `clerk/javascript`, and `firebase/firebase-js-sdk`
+  - validation results for this slice:
+    - passed:
+      - `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts tests/semantic-analysis.test.ts`
+      - `pnpm exec eslint lib/analysis/heuristics.ts lib/analysis/analyzer.ts tests/analyzer-fixtures.test.ts scripts/check-analysis-regression.mjs`
+      - `pnpm build`
+      - standalone `pnpm exec tsc --noEmit`
+      - live targeted checks:
+        - `tailwindlabs/headlessui`
+        - `clerk/javascript`
+        - `firebase/firebase-js-sdk`
+    - known non-slice limitation:
+      - full `pnpm lint` is still blocked by existing Claude-owned frontend hook issues outside this backend scope
+      - full `check-analysis-regression.mjs` still remains sensitive to GitHub owner-rate-limit failures on unrelated owner cases
+  - next backend restart point:
+    - improve beginner-facing README condensation and header-level repo identity compression without introducing LLM dependence
+    - decide whether live regression should be split into repo-only and owner-inclusive passes to avoid unrelated owner rate-limit failures blocking backend repo heuristics
+- latest backend slice after that:
+  - compare mode backend precision was tightened for the new `/compare` A안/B안 frontend flows without touching any `components/**` runtime code.
+  - schema additions in `lib/analysis/types.ts`:
+    - `RepoEnvRuntime`
+      - added optional `minMajor`, `maxMajor`, `range`
+    - `RepoEnvContainer`
+      - added optional `dockerRole`
+    - `RepoEnvCloud`
+      - kept existing string arrays for frontend safety
+      - added optional `servicesRequiredDetails` / `servicesOptionalDetails`
+    - `RepoIdentityGuide`
+      - added optional `consumptionMode`
+  - environment extraction updates in `lib/analysis/learning.ts`:
+    - runtime versions are now normalized into coarse range metadata
+      - examples:
+        - `>=20` -> `minMajor=20`, `maxMajor=null`, `range="gte"`
+        - `22` -> `minMajor=22`, `maxMajor=22`, `range="exact"`
+        - `>=3.14,<3.15` -> `minMajor=3`, `maxMajor=3`, `range="between"`
+        - `nightly-*` -> `range="unknown"`
+    - runtime source selection no longer lets an exact version file like `.nvmrc: 20` overwrite a broader package constraint like `engines.node: >=20` when both describe the same floor
+    - cloud services now keep display labels while also carrying canonical ids
+      - example: `Upstash Redis` keeps its label but canonicalizes to `redis`
+    - `dockerRole` is inferred with lightweight heuristics:
+      - `required`
+      - `optional-dev`
+      - `optional-deploy`
+      - `none`
+    - `consumptionMode` is inferred from package exports, import examples, app-surface paths, run commands, and output type
+  - client normalization updates in `lib/analysis/client.ts`:
+    - older cached repo analyses are still accepted with cache version unchanged
+    - missing compare/env fields are backfilled on read:
+      - `identity.consumptionMode`
+      - runtime range fields
+      - `container.dockerRole`
+      - service detail arrays
+  - compare backend updates in `lib/analysis/compare.ts`:
+    - runtime rows now include optional normalized fields (`aMinMajor`, `aMaxMajor`, `aRange`, `bMinMajor`, `bMaxMajor`, `bRange`)
+    - compare env now includes `dockerRoleA` / `dockerRoleB`
+    - required-service diff is now canonical-id based, so `Upstash Redis` and `Redis` compare as the same service
+  - compare live regression tooling was aligned with the new backend contract:
+    - `scripts/check-compare-regression.mjs`
+      - now uses runtime range metadata and canonical service ids instead of raw string equality
+    - `scripts/compare-regression-cases.json`
+      - expectations refreshed to current, fact-based live outputs
+  - test coverage added or expanded:
+    - `tests/analyzer-fixtures.test.ts`
+      - runtime range fields
+      - `dockerRole`
+      - canonical service detail arrays
+      - `consumptionMode`
+    - `tests/compare-view-model.test.ts`
+      - `dockerRoleA` / `dockerRoleB`
+      - canonical service matching with label mismatch (`Upstash Redis` vs `Redis`)
+    - `tests/client-cache.test.ts`
+      - normalized cached-analysis shape now includes compare/env additive fields
+  - validation results for this slice:
+    - passed:
+      - `pnpm exec tsc --noEmit`
+      - `pnpm lint`
+      - `pnpm build`
+      - `pnpm test:unit`
+      - `pnpm test:compare:live`
+      - targeted unit slice before full unit:
+        - `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/compare-view-model.test.ts tests/compare-diagnostics.test.ts tests/client-cache.test.ts`
+      - live repo sanity check via local `/api/analyze` for:
+        - `vercel/next.js`
+        - `supabase/supabase-js`
+        - `openai/openai-python`
+        - `n8n-io/n8n`
+        - `ahmedkhaleel2004/gitdiagram`
+  - next backend restart point:
+    - improve service required/optional separation for large app repos where README and env-example hints are mixed
+    - decide whether `openai/openai-python` project typing should remain `CLI 도구` or move to a more library-first classification without breaking beginner summaries
+    - hand frontend follow-up to Claude:
+      - use `minMajor/maxMajor/range` in `components/user-env.ts`
+      - use `servicesRequiredDetails[*].canonicalId` for environment matching
+      - branch compare copy on `learning.identity.consumptionMode`
+      - downgrade Docker mismatch severity when `dockerRole !== "required"`
+- latest backend slice after that:
+  - user-env v2를 위한 환경 요구사항 7축 확장을 backend에 추가했습니다. 프론트는 건드리지 않았고, `RepoAnalysis.learning.environment`에 정적·사실 기반 필드만 보강했습니다.
+  - 스키마 확장:
+    - `hardware`
+      - `minVramGb`
+      - `cpuArch`
+      - `acceleratorPreference`
+    - `container`
+      - `composeServiceCount`
+      - `needsMultiContainer`
+      - `dockerRole`를 `optional/recommended/required` 중심으로 단순화하되, 타입은 기존 값도 수용하도록 widened
+    - `cloud`
+      - `deployTargetRequired`
+      - `apiServicesRequired`
+      - `apiServicesOptional`
+    - `environment`
+      - `runtimeMode`
+      - `costEstimate`
+    - alias 추가:
+      - `RepoEnvRequirements = RepoEnvironmentGuide`
+  - 휴리스틱 추가:
+    - VRAM
+      - README의 `24GB VRAM` 같은 명시 수치 우선
+      - 없으면 모델명/양자화/`device_map="auto"`/`bitsandbytes` 기반 보수 추정
+    - CPU arch / accelerator
+      - `tensorflow-macos`, `torch.backends.mps` => `apple-silicon-ok` / `mps`
+      - `linux/amd64`, CUDA 계열 wheel/signals => `x64`
+      - `rocm` => `rocm`
+    - Docker
+      - compose service 수 계산
+      - `depends_on`/포트 바인딩 + 2개 이상 서비스면 `needsMultiContainer=true`
+    - deploy targets
+      - 기존 Vercel/Render/Fly/Railway/Netlify/GitHub Pages 유지
+      - AWS/GCP/Azure/Self-host 경로·설정·workflow 신호 추가
+    - deployTargetRequired
+      - AWS Lambda + DynamoDB류처럼 provider coupling이 강한 경우만 채움
+    - runtimeMode
+      - `k8s/helm/terraform` 또는 required deploy target => `cloud-required`
+      - localhost/dev-only 힌트 + cloud signal 부재 => `local-only`
+      - 그 외 `local-or-cloud`
+    - costEstimate
+      - `llm/gpu/saas/storage` driver 배열
+      - `free / under_10 / under_50 / under_200 / prod` bucket
+      - 정확 숫자 대신 거친 범위만 사용
+  - 신규 공용 유틸:
+    - `lib/analysis/env-match.ts`
+      - `buildEnvMatchReport(requirements, userEnv)` 순수 함수 export
+      - blocker/warning/info + headline 생성
+      - runtime, RAM, disk, GPU/VRAM, CPU arch, accelerator, Docker, deploy target, runtime mode, required services, budget까지 판정
+      - canonical service id 기반으로 `Upstash Redis`와 `Redis`를 같은 것으로 비교
+  - 테스트 추가:
+    - `tests/environment-requirements.test.ts`
+      - CPU-only local web
+      - LLM app
+      - GPU training
+      - AWS/k8s production
+      - free-tier Vercel app
+    - `tests/env-match.test.ts`
+      - blocker/warning/missing/match 분기
+      - canonical service match
+      - runtime range match
+  - 기존 테스트/캐시 보정:
+    - `tests/client-cache.test.ts` 샘플 analysis에 새 기본 필드 반영
+    - `tests/analyzer-fixtures.test.ts`의 dockerRole 기대값을 `recommended`로 갱신
+  - validation results for this slice:
+    - passed:
+      - `pnpm exec vitest run tests/environment-requirements.test.ts tests/env-match.test.ts tests/client-cache.test.ts tests/analyzer-fixtures.test.ts`
+      - `pnpm exec tsc --noEmit`
+      - `pnpm test:unit`
+      - `pnpm lint`
+      - `pnpm build`
+    - live smoke:
+      - `ahmedkhaleel2004/gitdiagram`
+      - `n8n-io/n8n`
+  - next backend restart point:
+    - `apiServicesRequired`와 `apiServicesOptional` 분리를 더 정교하게 다듬기
+    - 비용 추정 드라이버에 벡터 DB / object storage provider를 더 세분화할지 검토
+    - Claude 프론트가 붙을 때 `components/user-env.ts`를 `lib/analysis/env-match.ts` 기반으로 교체
+- latest backend refinement after that:
+  - 이번 slice는 “대형 앱 required/optional 정밀도”, “SDK/CLI 경계 분류”, “배포/비용 신호 과장 감소”를 동시에 다뤘습니다.
+  - project type / consumption mode:
+    - `heuristics.ts`
+      - `cli` substring bug를 제거했습니다. 이제 `client`, `clients` 같은 단어 때문에 CLI로 오분류되지 않습니다.
+      - `shouldPreferLibraryOverCliProjectType(...)`를 추가해 SDK repo가 user-facing CLI surface를 함께 가져도 library-first로 분류되게 했습니다.
+      - `PackageJsonShape`에 `optionalDependencies`, `peerDependencies`를 추가했고 dependency map도 반영했습니다.
+    - `learning.ts`
+      - library/component repo도 user-facing CLI surface가 있으면 `consumptionMode=hybrid`로 올릴 수 있게 바꿨습니다.
+      - Python import example(`from openai import OpenAI`)도 import usage signal로 인식합니다.
+  - environment service split:
+    - dependency 신호를 `runtime` vs `optional/dev/peer`로 분리했습니다.
+    - `.env.example`는 이제 line/block context를 봅니다.
+      - `# Optional integrations` 같은 주석 블록 아래의 연속 env key는 optional로 유지됩니다.
+      - blank line이나 다른 comment block에서 context를 끊습니다.
+    - dependency-only signal은 여전히 optional이지만, `runtime dependency + infra path/readme/compose(optional)`가 겹치면 core infra를 required로 승격합니다.
+  - canonical cloud service breadth:
+    - 새 provider를 canonicalization에 추가했습니다.
+      - object storage: `Amazon S3`, `Google Cloud Storage`, `Azure Blob Storage`, `MinIO`
+      - vector/search infra: `Pinecone`, `Weaviate`, `Qdrant`, `Milvus`, `Chroma`
+    - env key / dependency / compose text / infra path / README note 전부 같은 canonical set으로 수렴하게 맞췄습니다.
+  - api service split:
+    - `servicesRequired/servicesOptional`는 전체 external requirement를 유지합니다.
+    - `apiServicesRequired/apiServicesOptional`는 이제 account/API-facing service만 남깁니다.
+      - 포함: AI, auth, payment, email, managed storage, managed vector DB, Supabase/Firebase, Upstash Redis
+      - 제외: generic `PostgreSQL`, `MySQL`, `MongoDB`, plain `Redis`
+  - deploy/cost:
+    - `deployTargetRequired`는 provider score 기반으로 다시 계산합니다.
+      - config file presence만으로는 required가 되지 않습니다.
+      - vendor-specific runtime/infrastructure signal까지 겹쳐야 required가 됩니다.
+      - 결과적으로 generic `vercel.json + deploy on Vercel`은 required가 아니고, AWS Lambda/DynamoDB 같은 hard coupling만 required로 남습니다.
+    - `costEstimate.drivers`는 이제
+      - `벡터 DB 또는 검색 인프라 비용`
+      - `오브젝트 스토리지 비용`
+      를 별도 note로 남깁니다.
+  - compare backend-side compatibility summary 검토 결론:
+    - cached analysis payload에 precomputed summary field를 추가하지 않았습니다.
+    - 이유:
+      - 사용자 환경 의존 판정은 캐시 대상이 아니고
+      - 이미 `lib/analysis/env-match.ts`가 pure backend rule source 역할을 하기 때문입니다.
+    - 따라서 compare/result는 계속 `env-match`를 호출해 파생 summary를 UI 계층에서 만들면 됩니다.
+  - regression/validation additions:
+    - fixture tests 추가:
+      - official SDK + CLI boundary (`openai-python` style)
+      - optional env integration block handling
+      - dependency + infra path overlap required promotion
+      - vector DB + object storage cost/service detection
+    - validation passed:
+      - `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/environment-requirements.test.ts`
+      - `pnpm exec tsc --noEmit`
+      - `pnpm test:unit`
+      - `pnpm lint`
+      - `pnpm build`
+    - live smoke:
+      - `openai/openai-python` => `projectType=라이브러리 또는 SDK`, `consumptionMode=hybrid`
+      - `ahmedkhaleel2004/gitdiagram` => required services `Cloudflare R2/OpenAI/Upstash Redis`, optional `Amazon S3`
+      - `n8n-io/n8n` => DB/queue services remain optional-only under current conservative rules; this is acceptable because the repo supports multiple backend modes and the current slice favored false-positive reduction over forced promotion
+- latest backend refinement after that:
+  - 이번 slice는 app 레포에서 `analysis.keyFiles`가 “실제로 먼저 읽어야 할 파일” 쪽으로 다시 정렬되도록 semantic re-rank를 보정하는 작업입니다.
+  - 문제:
+    - dependency-rich `package.json`이 semantic score를 많이 먹으면서, 앱 레포에서도 `keyFiles[0]`가 manifest/config로 치우치는 케이스가 있었습니다.
+    - `recommendedStartFile`은 이미 앱 진입점으로 개선됐지만, `keyFiles` head가 여전히 `package.json`이면 Canvas/Inspector/learning panel 입력 품질이 어색했습니다.
+  - 구현:
+    - `lib/analysis/semantics.ts`
+      - `applySemanticHintsToKeyFiles(...)`에 `projectType` 인자를 추가했습니다.
+      - 앱형 project type에서는 context 파일만 음수 보정으로 내립니다.
+        - `README`
+        - `package.json`
+        - `tsconfig.json`
+        - `pnpm-workspace.yaml`
+        - `turbo.json`
+        - `nx.json`
+        - `next/tailwind/vite/eslint` config
+      - 중요한 제약:
+        - UI/API/Logic 구조 파일끼리 우선순위를 강제로 다시 섞지 않습니다.
+        - 즉 semantic order는 유지하고, manifest/config가 과도하게 선두로 튀는 경우만 눌러 false ordering을 줄입니다.
+    - `lib/analysis/analyzer.ts`
+      - key file semantic re-rank 호출부에 `projectType`를 전달합니다.
+    - `tests/analyzer-fixtures.test.ts`
+      - limited app fixture의 expectation을 현재 규칙에 맞게 갱신했습니다.
+      - `recommendedStartFile=apps/web/app/page.tsx`
+    - `scripts/check-analysis-regression.mjs`
+      - `firstKeyFileIn` expectation을 비교할 수 있게 확장했습니다.
+    - `scripts/analysis-regression-cases.json`
+      - live regression 4건에 first key file expectation을 추가했습니다.
+        - `ahmedkhaleel2004/gitdiagram`
+        - `calcom/cal.com`
+        - `n8n-io/n8n`
+        - `openai/openai-python`
+  - validation results for this slice:
+    - passed:
+      - `pnpm exec vitest run tests/semantic-analysis.test.ts tests/analyzer-fixtures.test.ts tests/result-view-model.test.ts`
+      - `pnpm exec tsc --noEmit`
+      - `pnpm lint`
+      - `pnpm build`
+    - live smoke:
+      - `ahmedkhaleel2004/gitdiagram`
+        - `firstKeyFile=src/app/page.tsx`
+        - `startFile=src/app/page.tsx`
+      - `calcom/cal.com`
+        - `firstKeyFile=apps/web/app/page.tsx`
+        - `startFile=apps/web/app/page.tsx`
+      - `n8n-io/n8n`
+        - `firstKeyFile=packages/frontend/editor-ui/src/app/api/favorites.ts`
+        - `startFile=README.md`
+      - `openai/openai-python`
+        - `firstKeyFile=README.md`
+        - `startFile=README.md`
+  - next backend restart point:
+    - 다음 Codex 우선순위는 레이어별 대표 node 선택과 limited/partial analysis 신뢰도 요약 정교화입니다.
+- latest backend refinement after that:
+  - 이번 slice는 레이어 대표 node 선택을 `점수 상위 N개`에서 `역할이 다른 대표 surface N개`로 바꾸는 작업입니다.
+  - 문제:
+    - route-heavy UI 레이어에서는 `page/page/page`처럼 같은 종류 파일이 상단을 독점했습니다.
+    - 반대로 `loading.tsx`, nested `App.tsx` 같은 support/generic surface가 과도한 점수를 받아 `page/layout/component`보다 먼저 튀는 케이스도 있었습니다.
+    - graph layer card는 explicit key files가 많으면 layer-level fallback 후보를 거의 보지 않아, 다양화 소스가 있어도 카드에 반영되지 않았습니다.
+  - 구현:
+    - `lib/analysis/heuristics.ts`
+      - `representativePathBucket(path, layerName)` 추가
+      - `pickLayerRepresentativePaths(paths, layerName, focusRoot, limit)` 추가
+      - `buildLayers()`는 이제 capped `layer.files`를 단순 점수순 6개가 아니라 role-diverse representative set으로 저장합니다.
+      - UI scoring 정리:
+        - `loading/error/not-found/default/template` bonus 중복 제거
+        - nested component `App.tsx`가 SPA entry로 오인되지 않도록 `SPA_ENTRY_PATTERN`을 root-level `App.tsx` / `src/App.tsx`로 제한
+        - `app` basename을 generic representative name에 포함
+    - `lib/analysis/graph.ts`
+      - layer card file selection이 explicit key files만으로 닫히지 않도록, layer-level fallback representative 후보를 항상 일부 합칩니다.
+      - 카드 3개를 고를 때도 bucket diversity를 반영합니다.
+  - validation results for this slice:
+    - passed:
+      - `pnpm exec vitest run tests/analysis-quality-guards.test.ts tests/analyzer-fixtures.test.ts tests/semantic-analysis.test.ts`
+      - `pnpm exec tsc --noEmit`
+      - `pnpm lint`
+      - `pnpm build`
+    - added guard:
+      - `tests/analysis-quality-guards.test.ts`
+        - route-heavy UI fixture에서 `page -> layout -> component`가 먼저 오도록 고정
+        - `components/loading.tsx`, `components/App.tsx`가 대표 3개를 가로채지 못하도록 고정
+    - live smoke:
+      - `ahmedkhaleel2004/gitdiagram`
+        - `UI.files[0..2] = page / layout / hero`
+      - `calcom/cal.com`
+        - `UI.files[0..2] = page / layout / PageWrapper`
+  - next backend restart point:
+    - 다음 Codex 우선순위는 representative node selection 다음 단계인 `limited/partial analysis` compact trust summary 정리입니다.
+    - 프론트가 과장 없이 “어디까지는 사실 기반이고 어디부터는 대표 경로 추정인지” 바로 말할 수 있게 하는 source-of-truth가 필요합니다.
+- latest backend refinement after that:
+  - 이번 slice는 남아 있던 backend 정밀도 우선순위 3개를 묶어 마감하는 작업입니다.
+    - environment false positive / false negative 축소
+    - compare / user-env 판정 정밀화
+    - single-repo library + demo surface 경계 보정
+  - 구현:
+    - `lib/analysis/learning.ts`
+      - GPU 감지를 `명시적 GPU 의존성`과 `GPU 가능한 ML 의존성`으로 분리했습니다.
+      - 이제 `torch` 같은 일반 ML 의존성만으로는 GPU 필수로 올리지 않습니다.
+      - GPU required는 아래 조합에서만 true로 올립니다.
+        - explicit GPU deps (`cuda`, `cupy`, `bitsandbytes`, `onnxruntime-gpu` 등)
+        - Docker/NVIDIA signal
+        - VRAM hint
+        - GPU-capable deps + README/code accelerator signal
+      - demo website/docs/site도 library repo의 hybrid consumption signal로 취급하도록 broaden 했습니다.
+    - `lib/analysis/env-match.ts`
+      - runtime 비교를 `major만` 보던 상태에서 raw version string 기반 semver-ish 비교로 확장했습니다.
+      - `>=3.14,<3.19`, `^3.11`, `18.x`, exact version 같은 케이스를 더 정확히 match/mismatch 합니다.
+      - fallback service alias도 확장했습니다.
+        - `Amazon S3` ↔ `S3`
+        - `Pinecone`
+        - `GCS`
+        - `Azure Blob`
+        - `MinIO`
+        - `Weaviate`, `Qdrant`, `Milvus`, `Chroma`
+    - `lib/analysis/heuristics.ts`
+      - single-package repo에서도 UI surface가 전부 `website/docs/demo/examples/...` 아래에만 있으면 library classification을 유지하도록 보정했습니다.
+    - `lib/analysis/analyzer.ts`
+      - single-package library repo가 support/demo root(`website`, `docs`, `ecosystem-tests` 등)로 focusRoot가 빨려 들어갈 때,
+        실제 library entry가 `src/index.*`면 effective focus root를 `src`로 교정합니다.
+      - 이 보정으로 `openai/openai-node` 같은 레포가 demo app가 아니라 library core 기준으로 읽히게 됩니다.
+    - tests / regression:
+      - `tests/env-match.test.ts`
+        - semver lower bound mismatch
+        - storage/vector alias fallback match
+      - `tests/analyzer-fixtures.test.ts`
+        - requirements-only Python repo의 GPU false positive 방지
+        - single-package SDK + demo website 경계 고정
+      - `scripts/analysis-regression-cases.json`
+        - `openai/openai-node` direct repo regression 추가
+          - `projectType=library`
+          - `consumptionMode=hybrid`
+          - `focusRoot=src`
+          - `OpenAI optional service`
+  - validation results for this slice:
+    - passed:
+      - `pnpm exec vitest run tests/env-match.test.ts tests/analyzer-fixtures.test.ts tests/environment-requirements.test.ts`
+      - `pnpm exec vitest run tests/semantic-analysis.test.ts`
+      - `pnpm exec tsc --noEmit`
+      - `pnpm lint`
+      - `pnpm test:unit`
+      - `pnpm build`
+    - live regression:
+      - repo / owner logic failures는 없었고, 새 `openai/openai-node` 케이스도 기대값에 맞게 잠겼습니다.
+      - 단, 전체 regression 마지막에 `developit` owner case가 GitHub API `429 RATE_LIMITED`로 막혔습니다.
+      - 즉 regression blocker는 코드가 아니라 외부 GitHub quota 상태입니다.
+  - next backend restart point:
+    - 다음 Codex 우선순위는 새로운 breadth 추가보다 현재 heuristic 결과를 제품적으로 더 설명 가능하게 만드는 쪽입니다.
+    - 구체적으로는:
+      - owner regression을 quota 친화적으로 재실행할 수 있는 운영 전략 보강
+      - trust summary가 프론트 IA에 실제로 충분한지 다시 점검
+
+- 2026-04-21 owner-regression / rate-limit slice:
+  - changed:
+    - `scripts/check-analysis-regression.mjs`
+    - `lib/analysis/github.ts`
+    - `app/api/analyze/route.ts`
+    - `tests/github-rate-limit.test.ts`
+    - `tests/analyze-route.test.ts`
+  - behavior:
+    - live regression runner now supports
+      - `ANALYSIS_REGRESSION_FORCE_REFRESH=all|none|repo-only|owner-only`
+      - `ANALYSIS_REGRESSION_RATE_LIMIT_MODE=fail|soft|owner-soft`
+      - `ANALYSIS_REGRESSION_MAX_RETRIES`
+      - `ANALYSIS_REGRESSION_MAX_WAIT_MS`
+    - default policy is now
+      - repo cases: fresh-first (`forceRefresh=true`)
+      - owner cases: cache-friendly (`forceRefresh=false`)
+      - owner rate-limit: soft-block instead of hard failure
+    - GitHub rate-limit errors now include `retryAfterSeconds`, and `/api/analyze` returns `Retry-After` when that value is available.
+  - validation:
+    - `pnpm exec vitest run tests/github-rate-limit.test.ts tests/analyze-route.test.ts tests/analysis-policy.test.ts`
+    - `pnpm exec tsc --noEmit`
+    - `pnpm lint`
+    - `pnpm build`
+    - `ANALYZE_BASE_URL=http://localhost:3000 ANALYSIS_REGRESSION_SCOPE=repo node scripts/check-analysis-regression.mjs`
+    - `ANALYZE_BASE_URL=http://localhost:3000 ANALYSIS_REGRESSION_SCOPE=owner node scripts/check-analysis-regression.mjs`
+  - live results:
+    - repo regression: `selectedCaseCount=17`, `blockedCount=0`
+    - owner regression: `selectedCaseCount=3`, `blockedCount=0`, all owner cases executed with `requestedForceRefresh=false`
+  - restart point:
+    - backend immediate blocker는 줄었다.
+    - 다음 Codex 후보는 owner sampling variability를 fixture/targeted tests로 더 고정하는 일이다.
+    - Claude는 이제 `coverage.trustSummary`, `meta.policy/meta.delivery`, `retryAfterSeconds`, `Retry-After`를 그대로 UI 상태 패널/신뢰도 문구에 매핑하면 된다.
+
+- 2026-04-21 owner-variability / compare-boundary slice:
+  - changed:
+    - `tests/owner-analysis.test.ts`
+    - `tests/owner-enrichment-budget.test.ts`
+    - `scripts/analysis-regression-cases.json`
+    - `Implement.md`
+    - `Documentation.md`
+  - fixture coverage added:
+    - `OWNER_REPO_METADATA_SPARSE` warning emission / suppression
+    - `selectOwnerEnrichmentCandidates(...)` official-current SDK 우선순위
+    - archived repo exclusion in enrichment candidate selection
+  - live corpus change:
+    - owner regression case에 `https://github.com/vercel` 추가
+    - current owner live set: `tailwindlabs`, `vercel`, `developit`, `openai`
+  - compare decision:
+    - no new backend payload/meta was added
+    - compare compatibility synthesis remains split across:
+      - cached repo facts: `lib/analysis/compare.ts`
+      - user env dependent matching: `env-match` / frontend state
+      - final presentation: Claude UI layer
+  - validation:
+    - `pnpm exec vitest run tests/owner-analysis.test.ts tests/owner-enrichment-budget.test.ts`
+    - `pnpm exec tsc --noEmit`
+    - `ANALYZE_BASE_URL=http://localhost:3000 ANALYSIS_REGRESSION_SCOPE=owner node scripts/check-analysis-regression.mjs`
+  - live results:
+    - owner regression: `selectedCaseCount=4`, `blockedCount=0`
+    - new `vercel` owner case passed with `requestedForceRefresh=false`
+  - restart point:
+    - backend owner regression은 지금 단계에서 최소 안정선까지 올라왔다.
+    - 다음 Codex 후보는 repo-side live corpus 확대나 owner category/theme heuristic 자체 보정이 아니라, 실제 alpha 운영에서 나온 drift를 보고 케이스를 추가하는 쪽이 맞다.
+
+- 2026-04-21 owner-theme / library-feature hardening slice:
+  - changed:
+    - `lib/analysis/owner.ts`
+    - `lib/analysis/analyzer.ts`
+    - `tests/owner-analysis.test.ts`
+    - `tests/owner-enrichment-budget.test.ts`
+    - `tests/semantic-analysis.test.ts`
+    - `scripts/analysis-regression-cases.json`
+    - `scripts/check-analysis-regression.mjs`
+    - `Implement.md`
+    - `Documentation.md`
+  - heuristics:
+    - owner `keyThemes`에서 raw stack/service/vendor topic token을 제외하도록 `OWNER_THEME_TOPIC_EXCLUSIONS`를 추가했다.
+    - library / design-system repo에서는 stronger product signal이 없을 때 generic `외부 서비스 연동`을 상단 `keyFeatures`로 올리지 않도록 정리했다.
+  - regression corpus:
+    - repo live set에 `https://github.com/tailwindlabs/tailwindcss`를 추가했다.
+    - owner live set에 `https://github.com/supabase`를 추가했다.
+    - owner expectation에는 `keyThemesAbsent`를 추가해 `postgres/postgresql/database` 같은 raw topic drift를 잠갔다.
+  - targeted tests added:
+    - sparse owner metadata warning emission / suppression
+    - official-current enrichment candidate selection priority
+    - archived owner repo exclusion
+    - owner theme filtering for raw service/database topics
+    - library/design-system repo generic external feature suppression
+  - validation:
+    - `pnpm exec vitest run tests/owner-analysis.test.ts tests/owner-enrichment-budget.test.ts tests/semantic-analysis.test.ts`
+    - `pnpm exec tsc --noEmit`
+    - `pnpm lint` (`components/analyzing-screen.tsx`의 기존 프론트 warning 2건만 남음)
+    - `pnpm build`
+    - `ANALYZE_BASE_URL=http://localhost:3000 ANALYSIS_REGRESSION_SCOPE=repo node scripts/check-analysis-regression.mjs`
+    - `ANALYZE_BASE_URL=http://localhost:3000 ANALYSIS_REGRESSION_SCOPE=owner ANALYSIS_REGRESSION_FORCE_REFRESH=owner-only node scripts/check-analysis-regression.mjs`
+  - live results:
+    - repo regression: `selectedCaseCount=18`, `blockedCount=0`
+    - owner regression: `selectedCaseCount=5`, `blockedCount=0`
+    - `supabase` owner case는 heuristic 변경 직후 stale cache를 피하려고 `owner-only force refresh`로 검증했다.
+  - restart point:
+    - backend 기준으로는 owner/theme/library drift에 대한 immediate follow-up이 없다.
+    - 다음 Codex 후보는 새 공개 레포 drift가 들어왔을 때 corpus를 추가하거나, alpha 운영 데이터 기준으로 owner 카드 품질을 다시 잠그는 쪽이다.
+    - Claude는 이제 `coverage.trustSummary`, `meta.policy/meta.delivery`, owner `keyThemes`, 그리고 repo `keyFeatures`를 그대로 소비해도 중복/노이즈가 한 단계 줄어든 상태를 전제로 UI 정리를 진행하면 된다.
+
+- 2026-04-21 alpha-drift guard slice:
+  - changed:
+    - `lib/analysis/learning.ts`
+    - `tests/analysis-quality-guards.test.ts`
+    - `tests/analyze-route.test.ts`
+    - `Documentation.md`
+    - `Implement.md`
+  - contract hardening:
+    - `identity.header.points` 후보가 모두 비거나 중복 제거로 사라져도 마지막 fallback point를 하나는 보장하도록 했다.
+    - `coverage.trustSummary.reasons`는 backend contract상 최대 3개라는 점을 fixture test로 잠갔다.
+    - `retryAfterSeconds`는 3600초를 넘는 긴 값도 clamp 없이 그대로 `Retry-After` 헤더와 error payload에 남긴다.
+  - validation:
+    - `pnpm exec vitest run tests/analysis-quality-guards.test.ts tests/analyze-route.test.ts tests/github-rate-limit.test.ts`
+    - `pnpm exec tsc --noEmit`
+    - `pnpm exec eslint lib/analysis/learning.ts tests/analysis-quality-guards.test.ts tests/analyze-route.test.ts tests/github-rate-limit.test.ts`
+  - notes:
+    - 이번 slice는 backend가 raw seconds를 보존하는 데까지만 책임진다.
+    - `retryAfterSeconds > 3600`일 때 시간 단위 카피 분기는 실제 alpha 운영 데이터 관측 후 Claude가 프론트에서 결정하면 된다.
+  - restart point:
+    - backend 쪽 immediate follow-up은 없다.
+    - 다음 Codex 후보는 실제 alpha 로그에서 “points가 비는 실레포”, “trust reasons가 과밀해 보이는 실레포”, “1시간 이상 rate-limit countdown”이 나오면 그 URL을 regression corpus로 승격하는 일이다.
+
+- 2026-04-21 backend follow-up / trust-priority slice:
+  - changed:
+    - `lib/analysis/analyzer.ts`
+    - `tests/analyzer-fixtures.test.ts`
+    - `tests/analysis-quality-guards.test.ts`
+    - `Documentation.md`
+    - `Implement.md`
+  - behavior:
+    - `coverage.trustSummary.reasons`는 now priority-based selection을 쓴다.
+      - preferred order:
+        - `LIMITED_ANALYSIS_MODE`
+        - `SUPPORTED_STACK_GAP`
+        - `LAYER_CLASSIFICATION_GAP`
+        - `TREE_TRUNCATED`
+        - `PACKAGE_JSON_PARSE_SKIPPED`
+      - `LIMITED_ANALYSIS_MODE`가 있을 때 `TREE_TRUNCATED`는 reason 슬롯에서 제외하고 `basedOn`/detail 쪽에만 남긴다.
+    - 저신호 repo의 `identity.header.points`는 최소 1개를 보장한다.
+  - observation:
+    - live public probe는 현재 authenticated GitHub quota 때문에 fresh fetch가 막혔다.
+    - 실관측 `/api/analyze` 429 payload에서는 `retryAfterSeconds=289`, `Retry-After=289`가 확인됐다.
+    - 1시간 이상 countdown 값은 아직 실데이터로 관측되지 않았다.
+  - validation:
+    - `pnpm exec vitest run tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts tests/analyze-route.test.ts tests/github-rate-limit.test.ts`
+    - `pnpm exec tsc --noEmit`
+    - `pnpm exec eslint lib/analysis/analyzer.ts lib/analysis/learning.ts tests/analyzer-fixtures.test.ts tests/analysis-quality-guards.test.ts tests/analyze-route.test.ts tests/github-rate-limit.test.ts`
+    - `pnpm build`
+  - restart point:
+    - backend immediate follow-up은 live regression corpus 확장뿐이다.
+    - 다만 현재 GitHub authenticated quota가 잠긴 상태라 fresh public repo probe는 대기해야 한다.
+    - 다음 Codex 후보:
+      - quota 회복 후 low-signal public repo 1건을 실제 live regression case로 추가
+      - quota 회복 후 `retryAfterSeconds >= 3600` 실관측이 있으면 그때만 별도 regression 케이스/운영 메모를 추가
+
+- 2026-04-21 candidate-backlog / consumption-mode precision slice:
+  - changed:
+    - `scripts/analysis-regression-candidates.json`
+    - `scripts/check-analysis-regression-candidates.mjs`
+    - `package.json`
+    - `lib/analysis/learning.ts`
+    - `tests/analyzer-fixtures.test.ts`
+    - `Documentation.md`
+    - `Implement.md`
+  - workflow:
+    - live regression으로 바로 못 올리는 drift 후보를 별도 backlog 파일에 유지한다.
+    - status flow:
+      - `awaiting-url`
+      - `ready-for-probe`
+      - `blocked-by-quota`
+      - `ready-for-regression`
+      - `observing`
+      - `landed`
+    - new script:
+      - `node scripts/check-analysis-regression-candidates.mjs`
+      - `pnpm test:regression:candidates`
+  - heuristics:
+    - app-shaped project type(`풀스택 웹앱`, `프론트엔드 웹앱`, `모노레포 웹 플랫폼`, `백엔드 API 서비스`, `API 서버`, `학습용 예제 저장소`)에서는 root manifest의 `exports/main/module/types`만으로 `importSignals`를 켜지 않는다.
+    - 이 경우 `consumptionMode=hybrid`는 README import usage 또는 focus workspace 자체의 export surface가 있을 때만 허용한다.
+    - 결과적으로 incidental export map을 가진 app repo는 `run-as-app`을 유지한다.
+  - tests added:
+    - exported app repo still -> `run-as-app`
+    - app-focused monorepo with root exports still -> `run-as-app`
+    - regression candidate backlog schema validation
+  - validation:
+    - `node scripts/check-analysis-regression-candidates.mjs`
+    - `pnpm exec vitest run tests/analyzer-fixtures.test.ts -t "run-as-app|hybrid|exported app repos|monorepo app with exports"`
+  - restart point:
+    - next Codex work remains the same at the top level:
+      - convert real alpha drift URLs into live regression cases
+      - keep tightening environment required/optional boundaries
+      - keep refining `projectType / consumptionMode` on public edge repos
+    - immediate network-free next slice candidate:
+      - add a targeted fixture for `Next.js app with exports + README import example` to confirm that explicit import usage still upgrades to `hybrid` when it should
+
+- 2026-04-21 low-signal feature fallback / regression runner filter slice:
+  - changed:
+    - `lib/analysis/heuristics.ts`
+    - `lib/analysis/learning.ts`
+    - `tests/analysis-quality-guards.test.ts`
+    - `scripts/check-analysis-regression.mjs`
+    - `Documentation.md`
+    - `Implement.md`
+  - behavior:
+    - `summary.keyFeatures`가 완전히 비는 저신호 repo에는 아주 보수적인 구조 fallback을 넣습니다.
+      - README가 있으면 `README 중심 시작 구조`
+      - README는 없고 manifest만 있으면 `설정 파일 중심 시작 구조`
+    - 이 fallback은 `features.length === 0`일 때만 동작하므로 기존 앱/라이브러리/SDK의 product-facing feature를 덮어쓰지 않습니다.
+    - `learning.identity.header.points`도 새 fallback feature를 읽어 같은 방향의 초보자용 문장으로 연결됩니다.
+    - live regression runner는 `ANALYSIS_REGRESSION_CASE_FILTER`를 지원합니다.
+      - case id / repoUrl substring 기준으로 public case를 좁혀 다시 돌릴 수 있습니다.
+      - filter 적용 후 선택 케이스가 0개면 local server discovery 전에 즉시 종료하므로, quota가 막힌 날에도 네트워크를 타지 않고 selection만 검증할 수 있습니다.
+      - output JSON에는 `caseFilters`, `blockedCases[{ repoUrl, retryAfterSeconds }]`가 추가됩니다.
+  - validation:
+    - `pnpm exec vitest run tests/analysis-quality-guards.test.ts -t "low-signal|manifest-based fallback"`
+    - `pnpm exec vitest run tests/analyzer-fixtures.test.ts -t "run-as-app|hybrid|exported app repos|monorepo app with exports"`
+    - `ANALYSIS_REGRESSION_CASE_FILTER=__no_match__ node scripts/check-analysis-regression.mjs`
+    - `pnpm exec vitest run tests/analysis-quality-guards.test.ts tests/analyzer-fixtures.test.ts tests/environment-requirements.test.ts tests/owner-analysis.test.ts`
+    - `pnpm exec tsc --noEmit`
+    - `pnpm exec eslint lib/analysis/heuristics.ts lib/analysis/learning.ts tests/analysis-quality-guards.test.ts scripts/check-analysis-regression.mjs`
+    - `pnpm build`
+  - notes:
+    - low-signal backend gap 중 `identity.header.points` 빈 상태는 이미 막혀 있었고, 이번 slice에서 `summary.keyFeatures`까지 최소 1개 구조 feature를 보장하게 됐습니다.
+    - 실제 public URL 승격은 여전히 quota 회복 뒤 live regression으로 해야 합니다. 이번 slice는 network-free guardrail 강화가 목적입니다.
+  - restart point:
+    - remaining backend work is now mostly public-repo/live-regression dependent:
+      - promote a real low-signal public repo into `scripts/analysis-regression-cases.json`
+      - promote a real SDK + demo boundary public repo into live regression
+      - keep tuning service required/optional boundaries when new alpha repos surface
+
+- 2026-04-21 live regression promotion / backlog cleanup slice:
+  - changed:
+    - `scripts/analysis-regression-cases.json`
+    - `scripts/analysis-regression-candidates.json`
+    - `Documentation.md`
+    - `Implement.md`
+  - behavior:
+    - real public low-signal repo를 live regression corpus에 승격했다.
+      - new case: `repo-low-signal-meta`
+      - url: `https://github.com/sindresorhus/meta`
+      - locked fields:
+        - `projectType=라이브러리 또는 개발 도구`
+        - `consumptionMode=unknown`
+        - `startFile/readme.md`
+        - `keyFeatures=["README 중심 시작 구조"]`
+        - low-signal beginner-facing identity point
+        - `SUPPORTED_STACK_GAP`
+    - existing public cases에도 filter-friendly id/alias를 붙였다.
+      - `repo-sdk-demo-supabase-js`
+      - `repo-trust-density-n8n`
+      - `owner-theme-supabase`
+    - candidate backlog는 실제 regression coverage 기준으로 정리했다.
+      - `repo-low-signal-public` -> `landed` (`sindresorhus/meta`)
+      - `repo-sdk-demo-boundary-public` -> `landed` (`supabase/supabase-js`)
+      - `repo-large-partial-trust-density` -> `landed` (`n8n-io/n8n`)
+      - `owner-theme-noise-public` -> `landed` (`supabase`)
+      - actionable candidate는 이제 rate-limit long countdown observation 1건만 남는다.
+  - validation:
+    - `node scripts/check-analysis-regression-candidates.mjs`
+    - `ANALYSIS_REGRESSION_SCOPE=all ANALYSIS_REGRESSION_FORCE_REFRESH=none ANALYSIS_REGRESSION_CASE_FILTER=repo-low-signal-meta,repo-sdk-demo-supabase-js,repo-trust-density-n8n,owner-theme-supabase node scripts/check-analysis-regression.mjs`
+  - notes:
+    - 이번 slice는 quota를 아끼기 위해 filter + cache-first(`forceRefresh=none`)로 landed cases만 재확인했다.
+    - 새 low-signal live case는 synthetic fixture가 아니라 실제 공개 repo라서, 앞으로 header/feature fallback drift를 사용자 관점으로 더 빨리 잡는다.
+  - restart point:
+    - remaining backend work is now almost entirely observation- or alpha-input-driven:
+      - 실제 `retryAfterSeconds >= 3600` 관측
+      - alpha에서 새로 들어오는 public repo/owner를 필요한 만큼 live regression으로 승격
+      - 신규 실레포를 기준으로 `servicesRequired / servicesOptional` 경계 재조정
+
+- 2026-04-21 rate-limit observation automation slice:
+  - changed:
+    - `scripts/regression-candidate-utils.mjs`
+    - `scripts/observe-rate-limit-candidate.mjs`
+    - `tests/regression-candidate-utils.test.ts`
+    - `package.json`
+    - `Documentation.md`
+    - `Implement.md`
+  - behavior:
+    - rate-limit candidate 관측을 수동 JSON 편집 없이 갱신할 수 있는 script를 추가했다.
+      - `pnpm observe:rate-limit`
+    - default behavior:
+      - candidate id: `rate-limit-long-countdown-observation`
+      - repo url: `https://github.com/vercel/next-learn`
+      - `forceRefresh=true`
+      - `writeBack=true`
+      - threshold: `3600s`
+    - env overrides:
+      - `RATE_LIMIT_CANDIDATE_ID`
+      - `RATE_LIMIT_REPO_URL`
+      - `RATE_LIMIT_FORCE_REFRESH`
+      - `RATE_LIMIT_THRESHOLD_SECONDS`
+      - `RATE_LIMIT_WRITE_BACK`
+      - `ANALYZE_BASE_URL`
+    - status transition:
+      - `retryAfterSeconds < threshold` -> `observing`
+      - `retryAfterSeconds >= threshold` -> `ready-for-regression`
+    - no 429가 나오면 file write 없이 `{ observed:false, reason:"NOT_RATE_LIMITED" }`를 출력한다.
+  - validation:
+    - `pnpm exec vitest run tests/regression-candidate-utils.test.ts`
+    - mock 429 server + `RATE_LIMIT_WRITE_BACK=false node scripts/observe-rate-limit-candidate.mjs`
+      - expected: `status=ready-for-regression`, `retryAfterSeconds=5400`
+    - real local dry-run:
+      - `RATE_LIMIT_WRITE_BACK=false pnpm observe:rate-limit`
+      - current result: `NOT_RATE_LIMITED`
+    - `pnpm exec tsc --noEmit`
+    - `pnpm exec eslint scripts/regression-candidate-utils.mjs scripts/observe-rate-limit-candidate.mjs tests/regression-candidate-utils.test.ts`
+  - restart point:
+    - backend implementation work is effectively closed for this track.
+    - next actual Codex action only happens when:
+      - a real 429 with `retryAfterSeconds >= 3600` is observed and should be promoted
+      - new alpha public repos expose env/service boundary drift worth locking into regression

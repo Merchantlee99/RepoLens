@@ -1,0 +1,130 @@
+@import "tailwindcss";
+
+/* ============================================================
+ * Design tokens — Linear-inspired
+ * Dark is the default. `[data-theme="light"]` overrides.
+ * ============================================================ */
+
+:root,
+:root[data-theme="dark"] {
+  --bg: #0a0a0b;
+  --bg-subtle: #101014;
+  --surface: #141417;
+  --surface-strong: #1a1b1e;
+  --surface-hover: #1f2024;
+
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.12);
+
+  --fg: #e8e8ea;
+  --fg-muted: #8a8f98;
+  --fg-dim: #5e626a;
+
+  --accent: #3ecf8e;
+  --accent-fg: #0a0a0b;
+  --accent-soft: rgba(62, 207, 142, 0.14);
+  --accent-ink: #3ecf8e;
+  --accent-warm: #d77e44;
+
+  --ring: rgba(62, 207, 142, 0.4);
+
+  --dot-ui: #e08a55;
+  --dot-logic: #3ecf8e;
+  --dot-api: #6f8fde;
+  --dot-db: #a583d8;
+  --dot-external: #d6b347;
+
+  --grid-line: rgba(255, 255, 255, 0.025);
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.25);
+
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-subtle: #fafbfc;
+  --surface: #ffffff;
+  --surface-strong: #f7f8f9;
+  --surface-hover: #f1f2f4;
+
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.14);
+
+  --fg: #0a0a0b;
+  --fg-muted: #62666d;
+  --fg-dim: #9ba0a8;
+
+  --accent: #0d8c74;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(13, 140, 116, 0.1);
+  --accent-ink: #07362d;
+  --accent-warm: #eb7d3c;
+
+  --ring: rgba(13, 140, 116, 0.28);
+
+  --dot-ui: #eb7d3c;
+  --dot-logic: #0d8c74;
+  --dot-api: #5b83d7;
+  --dot-db: #8b62cf;
+  --dot-external: #c5971d;
+
+  --grid-line: rgba(0, 0, 0, 0.04);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06);
+
+  color-scheme: light;
+}
+
+/* ============================================================
+ * Tailwind theme bridge — legacy var names kept for callers
+ * ============================================================ */
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-panel: var(--surface);
+  --color-panel-strong: var(--surface-strong);
+  --color-line: var(--border);
+  --color-muted: var(--fg-muted);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-warm: var(--accent-warm);
+  --font-sans: "Avenir Next", "Pretendard", "Segoe UI", sans-serif;
+  --font-mono: "SF Mono", "IBM Plex Mono", "Menlo", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-feature-settings: "cv02", "cv11", "ss01", "ss03";
+  letter-spacing: -0.003em;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+a,
+button,
+input,
+textarea,
+select {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}

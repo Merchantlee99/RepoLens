@@ -1,0 +1,969 @@
+[
+  {
+    "repoUrl": "https://github.com/openai/openai-quickstart-node",
+    "expect": {
+      "projectTypeIn": [
+        "라이브러리 또는 SDK"
+      ],
+      "analysisModeIn": [
+        "full"
+      ],
+      "startFileIn": [
+        "README.md",
+        "package.json"
+      ],
+      "keyFilesContain": [
+        "README.md",
+        "package.json"
+      ],
+      "previewModeIn": [
+        "none"
+      ],
+      "deployUrlAbsent": true,
+      "envRuntimeModeIn": [
+        "local-only",
+        "local-or-cloud"
+      ],
+      "envDeployTargetRequiredAbsent": true,
+      "envServicesRequiredContain": [
+        "OpenAI"
+      ],
+      "envCostTierIn": [
+        "free",
+        "under_50"
+      ],
+      "envCostDriverKindsContain": [
+        "llm"
+      ],
+      "coverageLevelIn": [
+        "partial"
+      ],
+      "coverageHeadlineContains": [
+        "핵심 구조"
+      ],
+      "coverageApproximateEquals": false,
+      "identityTrustSourceIn": [
+        "mixed",
+        "code"
+      ],
+      "identitySubtitleContains": [
+        "가져다 쓰는지 중심으로"
+      ],
+      "identitySubtitleAbsent": [
+        "학습용 저장소"
+      ],
+      "readmeSummaryPresent": true,
+      "readmeSummaryContains": [
+        "collection of examples"
+      ],
+      "keyFeaturesContain": [
+        "OpenAI 연동 확인"
+      ],
+      "keyFeaturesAbsent": [
+        "외부 서비스 연동"
+      ],
+      "oneLinerContain": [
+        "OpenAI 연동"
+      ],
+      "oneLinerAbsent": [
+        "GitHub 연동",
+        "Slack 연동",
+        "Resend 연동"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/openai/openai-python",
+    "expect": {
+      "projectTypeIn": [
+        "라이브러리 또는 SDK"
+      ],
+      "consumptionModeIn": [
+        "hybrid"
+      ],
+      "analysisModeIn": [
+        "full"
+      ],
+      "startFileIn": [
+        "README.md"
+      ],
+      "firstKeyFileIn": [
+        "README.md"
+      ],
+      "layerNamesContain": [
+        "Logic"
+      ],
+      "layerNamesAbsent": [
+        "DB"
+      ],
+      "stackContain": [
+        "Python"
+      ],
+      "envRuntimeModeIn": [
+        "local-only"
+      ],
+      "envDeployTargetRequiredAbsent": true,
+      "envServicesRequiredAbsent": [
+        "OpenAI"
+      ],
+      "envServicesOptionalContain": [
+        "OpenAI"
+      ],
+      "envCostTierIn": [
+        "under_50"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/vercel/next-learn",
+    "expect": {
+      "projectTypeIn": [
+        "학습용 예제 저장소"
+      ],
+      "analysisModeIn": [
+        "full"
+      ],
+      "focusRootEquals": "dashboard/final-example",
+      "startFileIn": [
+        "README.md"
+      ],
+      "keyFilesContain": [
+        "dashboard/final-example/app/page.tsx"
+      ],
+      "previewModeIn": [
+        "deploy_url"
+      ],
+      "deployUrlContains": [
+        "next-learn-starter.vercel.app"
+      ],
+      "envDeployTargetsContain": [
+        "Vercel"
+      ],
+      "envDeployTargetRequiredAbsent": true,
+      "envCostTierIn": [
+        "free"
+      ],
+      "usageRunContains": [
+        "cd dashboard/final-example && pnpm dev"
+      ],
+      "coverageLevelIn": [
+        "partial"
+      ],
+      "coverageBasedOnContain": [
+        "대표 범위"
+      ],
+      "coverageApproximateEquals": false,
+      "identityTrustSourceIn": [
+        "mixed"
+      ],
+      "readmeSummaryPresent": true,
+      "readmeAudienceIn": [
+        "학습자"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/calcom/cal.com",
+    "expect": {
+      "projectTypeIn": [
+        "모노레포 웹 플랫폼"
+      ],
+      "analysisModeIn": [
+        "limited"
+      ],
+      "focusRootEquals": "apps/web",
+      "startFileIn": [
+        "apps/web/app/page.tsx",
+        "README.md"
+      ],
+      "firstKeyFileIn": [
+        "apps/web/app/page.tsx"
+      ],
+      "keyFilesContain": [
+        "apps/web/package.json"
+      ],
+      "previewModeIn": [
+        "readme_images"
+      ],
+      "deployUrlAbsent": true,
+      "envRuntimeModeIn": [
+        "local-or-cloud"
+      ],
+      "envDeployTargetsContain": [
+        "Vercel",
+        "Railway",
+        "Render"
+      ],
+      "envServicesRequiredContain": [
+        "PostgreSQL",
+        "Redis",
+        "Stripe"
+      ],
+      "envCostTierIn": [
+        "prod"
+      ],
+      "coverageLevelIn": [
+        "limited"
+      ],
+      "coverageHeadlineContains": [
+        "대표 경로 기준"
+      ],
+      "coverageBasedOnContain": [
+        "대표 범위"
+      ],
+      "coverageApproximateEquals": true,
+      "keyFeaturesContain": [
+        "Prisma 연결 확인",
+        "Stripe 연동 확인"
+      ],
+      "keyFeaturesAbsent": [
+        "외부 서비스 연동",
+        "데이터 저장/조회"
+      ],
+      "oneLinerContain": [
+        "Prisma 연결",
+        "Stripe 연동"
+      ],
+      "oneLinerAbsent": [
+        "Sentry 연동"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/n8n-io/n8n",
+    "expect": {
+      "projectTypeIn": [
+        "모노레포 웹 플랫폼"
+      ],
+      "analysisModeIn": [
+        "limited"
+      ],
+      "focusRootEquals": "packages/frontend/editor-ui",
+      "startFileIn": [
+        "README.md",
+        "packages/frontend/editor-ui/src/app/api/favorites.ts"
+      ],
+      "firstKeyFileIn": [
+        "packages/frontend/editor-ui/src/app/api/favorites.ts",
+        "README.md"
+      ],
+      "warningsAbsent": [
+        "LAYER_CLASSIFICATION_GAP"
+      ],
+      "unclassifiedCodeFileCountMax": 0,
+      "keyFeaturesContain": [
+        "TypeORM 연결 확인"
+      ],
+      "keyFeaturesAbsent": [
+        "데이터 저장/조회",
+        "외부 서비스 연동"
+      ],
+      "oneLinerContain": [
+        "TypeORM 연결"
+      ],
+      "oneLinerAbsent": [
+        "Sentry 연동"
+      ],
+      "identityPointsContain": [
+        "앱 코드와 공용 패키지가 어떻게 나뉘는지 바로 파악할 수 있습니다."
+      ],
+      "readmeKeyPointsAbsent": [
+        "Active Community",
+        "Enterprise-Ready",
+        "Full Control"
+      ],
+      "envRuntimeModeIn": [
+        "cloud-required"
+      ],
+      "envDeployTargetsContain": [
+        "Self-host",
+        "Docker"
+      ],
+      "envServicesOptionalContain": [
+        "OpenAI",
+        "Redis",
+        "PostgreSQL"
+      ],
+      "envCostTierIn": [
+        "prod"
+      ],
+      "coverageLevelIn": [
+        "limited"
+      ],
+      "coverageHeadlineContains": [
+        "대표 경로 기준"
+      ],
+      "coverageBasedOnContain": [
+        "대표 범위"
+      ],
+      "coverageApproximateEquals": true
+    },
+    "id": "repo-trust-density-n8n",
+    "aliases": [
+      "trust-density",
+      "n8n"
+    ]
+  },
+  {
+    "repoUrl": "https://github.com/supabase/supabase",
+    "expect": {
+      "projectTypeIn": [
+        "모노레포 웹 플랫폼"
+      ],
+      "analysisModeIn": [
+        "limited"
+      ],
+      "focusRootEquals": "apps/studio",
+      "startFileIn": [
+        "apps/studio/pages/new/index.tsx",
+        "apps/studio/package.json"
+      ],
+      "keyFilesContain": [
+        "apps/studio/package.json"
+      ],
+      "previewModeIn": [
+        "readme_images"
+      ],
+      "deployUrlContains": [
+        "supabase.com"
+      ],
+      "envRuntimeModeIn": [
+        "cloud-required"
+      ],
+      "envDeployTargetsContain": [
+        "Vercel",
+        "Self-host"
+      ],
+      "envServicesRequiredContain": [
+        "Supabase",
+        "PostgreSQL"
+      ],
+      "envCostTierIn": [
+        "prod"
+      ],
+      "coverageLevelIn": [
+        "limited"
+      ],
+      "coverageHeadlineContains": [
+        "대표 경로 기준"
+      ],
+      "coverageBasedOnContain": [
+        "대표 범위"
+      ],
+      "coverageApproximateEquals": true
+    }
+  },
+  {
+    "repoUrl": "https://github.com/tailwindlabs/headlessui",
+    "expect": {
+      "projectTypeIn": [
+        "컴포넌트 라이브러리 또는 디자인 시스템"
+      ],
+      "analysisModeIn": [
+        "full"
+      ],
+      "focusRootStartsWith": "packages/",
+      "startFileIn": [
+        "README.md"
+      ],
+      "keyFilesContain": [
+        "package.json"
+      ],
+      "warningsAbsent": [
+        "SUPPORTED_STACK_GAP"
+      ],
+      "stackContain": [
+        "Vue"
+      ],
+      "identityTitleContains": [
+        "디자인 시스템"
+      ],
+      "previewModeIn": [
+        "deploy_url"
+      ],
+      "deployUrlContains": [
+        "headlessui.com"
+      ],
+      "coverageLevelIn": [
+        "ok"
+      ],
+      "coverageApproximateEquals": false,
+      "unclassifiedCodeFileCountMax": 0,
+      "unclassifiedCodeSamplesAbsent": [
+        "packages/@headlessui-vue/src/index.ts",
+        "packages/@headlessui-vue/src/internal/dom-containers.ts",
+        "packages/@headlessui-vue/src/internal/open-closed.ts"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/tailwindlabs/tailwindcss",
+    "expect": {
+      "projectTypeIn": [
+        "라이브러리 또는 SDK"
+      ],
+      "focusRootEquals": "packages/tailwindcss",
+      "startFileIn": [
+        "README.md"
+      ],
+      "keyFilesContain": [
+        "packages/tailwindcss/package.json",
+        "packages/tailwindcss/src/index.ts"
+      ],
+      "keyFeaturesContain": [
+        "라이브러리 진입점"
+      ],
+      "keyFeaturesAbsent": [
+        "외부 서비스 연동",
+        "데이터 저장/조회"
+      ],
+      "previewModeIn": [
+        "deploy_url"
+      ],
+      "coverageLevelIn": [
+        "ok",
+        "partial"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/radix-ui/primitives",
+    "expect": {
+      "projectTypeIn": [
+        "컴포넌트 라이브러리 또는 디자인 시스템"
+      ],
+      "analysisModeIn": [
+        "full"
+      ],
+      "focusRootStartsWith": "packages/",
+      "startFileIn": [
+        "README.md"
+      ],
+      "keyFilesContain": [
+        "pnpm-workspace.yaml"
+      ],
+      "identityTitleContains": [
+        "디자인 시스템"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/mui/material-ui",
+    "expect": {
+      "projectTypeIn": [
+        "컴포넌트 라이브러리 또는 디자인 시스템"
+      ],
+      "analysisModeIn": [
+        "limited"
+      ],
+      "focusRootEquals": "packages/mui-material",
+      "startFileIn": [
+        "README.md"
+      ],
+      "keyFilesContain": [
+        "packages/mui-material/package.json"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/shadcn-ui/ui",
+    "expect": {
+      "projectTypeIn": [
+        "컴포넌트 라이브러리 또는 디자인 시스템"
+      ],
+      "analysisModeIn": [
+        "limited"
+      ],
+      "focusRootEquals": "packages/shadcn",
+      "startFileIn": [
+        "README.md"
+      ],
+      "keyFilesContain": [
+        "packages/shadcn/package.json",
+        "packages/shadcn/src/index.ts"
+      ],
+      "warningsAbsent": [
+        "LAYER_CLASSIFICATION_GAP"
+      ],
+      "keyFeaturesAbsent": [
+        "데이터 저장/조회"
+      ],
+      "identityTitleContains": [
+        "디자인 시스템"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/sourcewizard-ai/react-ai-agent-chat-sdk",
+    "expect": {
+      "projectTypeIn": [
+        "모노레포 웹 플랫폼"
+      ],
+      "analysisModeIn": [
+        "full"
+      ],
+      "focusRootEquals": "examples/chat-page",
+      "startFileIn": [
+        "examples/chat-page/app/page.tsx",
+        "examples/chat-page/lib/agent-chat-client-config.ts"
+      ],
+      "keyFilesContain": [
+        "examples/chat-page/app/api/chat/route.ts",
+        "examples/chat-page/lib/agent-config.ts"
+      ],
+      "inferenceIdsContain": [
+        "api_logic_flow"
+      ],
+      "previewModeIn": [
+        "none"
+      ],
+      "deployUrlAbsent": true,
+      "coverageLevelIn": [
+        "partial"
+      ],
+      "readmeArchitectureNotesMin": 2,
+      "readmeArchitectureNotesContain": [
+        "Frontend Configuration",
+        "Backend Configuration"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/vercel/ai",
+    "expect": {
+      "projectTypeIn": [
+        "라이브러리 또는 SDK"
+      ],
+      "consumptionModeIn": [
+        "hybrid"
+      ],
+      "analysisModeIn": [
+        "full",
+        "limited"
+      ],
+      "focusRootEquals": "packages/ai",
+      "startFileIn": [
+        "README.md"
+      ],
+      "stackContain": [
+        "TypeScript"
+      ],
+      "envRuntimeModeIn": [
+        "local-only",
+        "local-or-cloud"
+      ],
+      "envDeployTargetRequiredAbsent": true,
+      "envServicesOptionalContain": [
+        "OpenAI",
+        "Anthropic",
+        "Redis"
+      ],
+      "envCostTierIn": [
+        "under_10",
+        "under_50"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/ahmedkhaleel2004/gitdiagram",
+    "expect": {
+      "projectTypeIn": [
+        "풀스택 웹앱"
+      ],
+      "analysisModeIn": [
+        "full"
+      ],
+      "startFileIn": [
+        "src/app/page.tsx"
+      ],
+      "firstKeyFileIn": [
+        "src/app/page.tsx"
+      ],
+      "keyFeaturesContain": [
+        "OpenAI 연동 확인",
+        "페이지 기반 진입 구조"
+      ],
+      "keyFeaturesAbsent": [
+        "외부 서비스 연동"
+      ],
+      "oneLinerContain": [
+        "OpenAI 연동"
+      ],
+      "envDeployTargetRequiredAbsent": true,
+      "envServicesRequiredContain": [
+        "OpenAI",
+        "Upstash Redis",
+        "Cloudflare R2"
+      ],
+      "envCostTierIn": [
+        "under_50"
+      ],
+      "envCostDriverKindsContain": [
+        "llm",
+        "storage"
+      ],
+      "identitySubtitleContains": [
+        "GitHub 레포 구조를 빠르게 파악"
+      ],
+      "identityPointsContain": [
+        "Mermaid 코드나 PNG로 내보낼 수 있습니다."
+      ],
+      "coverageLevelIn": [
+        "partial"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/clerk/javascript",
+    "expect": {
+      "projectTypeIn": [
+        "라이브러리 또는 SDK"
+      ],
+      "consumptionModeIn": [
+        "hybrid"
+      ],
+      "focusRootEquals": "packages/nextjs",
+      "stackContain": [
+        "TypeScript"
+      ],
+      "envDeployTargetsContain": [
+        "Vercel"
+      ],
+      "envServicesRequiredContain": [
+        "Clerk"
+      ],
+      "envCostTierIn": [
+        "under_10"
+      ],
+      "unclassifiedCodeFileCountMax": 0,
+      "keyFeaturesAbsent": [
+        "Clerk 연동 확인",
+        "페이지 기반 진입 구조"
+      ],
+      "oneLinerAbsent": [
+        "Clerk 연동"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/firebase/firebase-js-sdk",
+    "expect": {
+      "projectTypeIn": [
+        "라이브러리 또는 SDK"
+      ],
+      "consumptionModeIn": [
+        "hybrid"
+      ],
+      "focusRootStartsWith": "packages/",
+      "stackContain": [
+        "TypeScript"
+      ],
+      "unclassifiedCodeFileCountMax": 0,
+      "keyFeaturesAbsent": [
+        "Firebase 연결 확인"
+      ],
+      "oneLinerAbsent": [
+        "Firebase 연결"
+      ],
+      "deployUrlAbsent": true
+    }
+  },
+  {
+    "repoUrl": "https://github.com/supabase/supabase-js",
+    "expect": {
+      "projectTypeIn": [
+        "라이브러리 또는 SDK"
+      ],
+      "consumptionModeIn": [
+        "hybrid"
+      ],
+      "focusRootStartsWith": "packages/core/",
+      "stackContain": [
+        "TypeScript"
+      ],
+      "stackAbsent": [
+        "Next.js",
+        "Tailwind CSS"
+      ],
+      "keyFeaturesAbsent": [
+        "Supabase 연결 확인",
+        "페이지 기반 진입 구조",
+        "재사용 컴포넌트 구조"
+      ],
+      "oneLinerAbsent": [
+        "Supabase 연결"
+      ]
+    },
+    "id": "repo-sdk-demo-supabase-js",
+    "aliases": [
+      "sdk-demo",
+      "supabase-js"
+    ]
+  },
+  {
+    "repoUrl": "https://github.com/openai/openai-node",
+    "expect": {
+      "projectTypeIn": [
+        "라이브러리 또는 SDK"
+      ],
+      "consumptionModeIn": [
+        "hybrid"
+      ],
+      "focusRootEquals": "src",
+      "startFileIn": [
+        "README.md"
+      ],
+      "stackContain": [
+        "TypeScript"
+      ],
+      "envServicesRequiredAbsent": [
+        "OpenAI"
+      ],
+      "envServicesOptionalContain": [
+        "OpenAI"
+      ],
+      "envCostTierIn": [
+        "under_50"
+      ]
+    }
+  },
+  {
+    "id": "repo-low-signal-meta",
+    "aliases": [
+      "low-signal",
+      "sindresorhus-meta"
+    ],
+    "repoUrl": "https://github.com/sindresorhus/meta",
+    "expect": {
+      "projectTypeIn": [
+        "라이브러리 또는 개발 도구"
+      ],
+      "consumptionModeIn": [
+        "unknown"
+      ],
+      "startFileIn": [
+        "readme.md"
+      ],
+      "firstKeyFileIn": [
+        "readme.md"
+      ],
+      "keyFeaturesContain": [
+        "README 중심 시작 구조"
+      ],
+      "identityPointsContain": [
+        "README에서 프로젝트 목적과 시작 단서를 먼저 확인할 수 있습니다."
+      ],
+      "warningsContain": [
+        "SUPPORTED_STACK_GAP"
+      ],
+      "coverageLevelIn": [
+        "ok"
+      ],
+      "coverageReasonsContain": [
+        "우선 지원 스택 밖이라 일부 의미 해석 정확도가 낮을 수 있습니다"
+      ],
+      "envRuntimeModeIn": [
+        "local-or-cloud"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/tailwindlabs",
+    "expect": {
+      "kindIn": [
+        "owner"
+      ],
+      "ownerTypeLabelIn": [
+        "오가니제이션"
+      ],
+      "publicRepoCountMin": 10,
+      "sampledRepoCountMin": 10,
+      "enrichedRepoCountIn": [
+        3,
+        8
+      ],
+      "commonStacksContain": [
+        "Tailwind CSS",
+        "JavaScript"
+      ],
+      "keyThemesContain": [
+        "개발 도구",
+        "UI"
+      ],
+      "featuredReposContainAny": [
+        "tailwindlabs/tailwindcss",
+        "tailwindlabs/headlessui",
+        "tailwindlabs/heroicons"
+      ],
+      "beginnerReposContainAny": [
+        "tailwindlabs/tailwindcss",
+        "tailwindlabs/headlessui",
+        "tailwindlabs/heroicons"
+      ],
+      "recommendedStartingPointsMin": 1
+    }
+  },
+  {
+    "repoUrl": "https://github.com/vercel",
+    "expect": {
+      "kindIn": [
+        "owner"
+      ],
+      "ownerTypeLabelIn": [
+        "오가니제이션"
+      ],
+      "publicRepoCountMin": 50,
+      "sampledRepoCountMin": 50,
+      "enrichedRepoCountIn": [
+        3,
+        8
+      ],
+      "commonStacksContain": [
+        "TypeScript",
+        "Next.js"
+      ],
+      "keyThemesContain": [
+        "개발 도구",
+        "예제/학습"
+      ],
+      "featuredReposContainAny": [
+        "vercel/vercel",
+        "vercel/ai",
+        "vercel/turborepo"
+      ],
+      "beginnerReposContainAny": [
+        "vercel/next-learn",
+        "vercel/platforms",
+        "vercel/next.js"
+      ],
+      "recommendedStartingPointsMin": 1,
+      "limitationsContain": [
+        "OWNER_REPO_SAMPLE_LIMIT"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/developit",
+    "expect": {
+      "kindIn": [
+        "owner"
+      ],
+      "ownerTypeLabelIn": [
+        "사용자"
+      ],
+      "publicRepoCountMin": 50,
+      "sampledRepoCountMin": 50,
+      "enrichedRepoCountIn": [
+        3,
+        8
+      ],
+      "commonStacksContain": [
+        "JavaScript",
+        "TypeScript"
+      ],
+      "keyThemesContain": [
+        "라이브러리",
+        "UI"
+      ],
+      "featuredReposContainAny": [
+        "developit/mitt",
+        "developit/microbundle",
+        "developit/unfetch"
+      ],
+      "beginnerReposContainAny": [
+        "developit/express-es6-rest-api",
+        "developit/unfetch",
+        "developit/mitt"
+      ],
+      "recommendedStartingPointsMin": 1,
+      "limitationsContain": [
+        "OWNER_REPO_SAMPLE_LIMIT"
+      ]
+    }
+  },
+  {
+    "repoUrl": "https://github.com/openai",
+    "expect": {
+      "kindIn": [
+        "owner"
+      ],
+      "ownerTypeLabelIn": [
+        "오가니제이션"
+      ],
+      "publicRepoCountMin": 10,
+      "sampledRepoCountMin": 10,
+      "enrichedRepoCountIn": [
+        3,
+        8
+      ],
+      "commonStacksContain": [
+        "Python",
+        "JavaScript"
+      ],
+      "keyThemesContain": [
+        "AI",
+        "예제/학습"
+      ],
+      "featuredReposContainAny": [
+        "openai/openai-python",
+        "openai/openai-node",
+        "openai/openai-cookbook"
+      ],
+      "beginnerReposContainAny": [
+        "openai/openai-cookbook",
+        "openai/openai-quickstart-node",
+        "openai/openai-python"
+      ],
+      "recommendedStartingPointsMin": 1
+    }
+  },
+  {
+    "repoUrl": "https://github.com/supabase",
+    "expect": {
+      "kindIn": [
+        "owner"
+      ],
+      "ownerTypeLabelIn": [
+        "오가니제이션"
+      ],
+      "publicRepoCountMin": 50,
+      "sampledRepoCountMin": 50,
+      "enrichedRepoCountIn": [
+        3,
+        8
+      ],
+      "commonStacksContain": [
+        "TypeScript",
+        "Supabase"
+      ],
+      "keyThemesContain": [
+        "데이터",
+        "라이브러리"
+      ],
+      "keyThemesAbsent": [
+        "postgres",
+        "postgresql",
+        "database"
+      ],
+      "featuredReposContainAny": [
+        "supabase/supabase",
+        "supabase/supabase-js",
+        "supabase/cli"
+      ],
+      "beginnerReposContainAny": [
+        "supabase/cli",
+        "supabase/supabase",
+        "supabase/supabase-js"
+      ],
+      "recommendedStartingPointsMin": 1,
+      "limitationsContain": [
+        "OWNER_REPO_SAMPLE_LIMIT"
+      ]
+    },
+    "id": "owner-theme-supabase",
+    "aliases": [
+      "owner-theme",
+      "supabase-owner"
+    ]
+  }
+]

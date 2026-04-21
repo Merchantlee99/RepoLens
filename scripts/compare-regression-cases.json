@@ -1,0 +1,69 @@
+[
+  {
+    "name": "vercel-next-vs-turbo",
+    "a": "https://github.com/vercel/next.js",
+    "b": "https://github.com/vercel/turbo",
+    "expect": {
+      "compareEligible": true,
+      "commonStackContain": ["React"],
+      "onlyAStackContain": ["Next.js", "TypeScript"],
+      "sharedLayersContain": ["UI"],
+      "runtimeNamesContain": ["node", "rust"],
+      "runtimeDifferentContain": ["node"],
+      "dockerModeIn": ["both"],
+      "deployModeIn": ["shared"]
+    }
+  },
+  {
+    "name": "gitdiagram-vs-n8n",
+    "a": "https://github.com/ahmedkhaleel2004/gitdiagram",
+    "b": "https://github.com/n8n-io/n8n",
+    "expect": {
+      "compareEligible": true,
+      "commonStackContain": ["TypeScript", "Node.js"],
+      "sharedLayersContain": ["UI", "Logic", "API", "External"],
+      "runtimeNamesContain": ["node", "python", "bun"],
+      "runtimeOnlyAContain": ["python", "bun"],
+      "servicesOnlyAContain": ["Cloudflare R2", "OpenAI", "Upstash Redis"],
+      "dockerModeIn": ["both"],
+      "deployModeIn": ["different"]
+    }
+  },
+  {
+    "name": "nostalgia-vs-openai-python",
+    "a": "https://github.com/iterativv/NostalgiaForInfinity",
+    "b": "https://github.com/openai/openai-python",
+    "expect": {
+      "compareEligible": true,
+      "commonStackContain": ["Python"],
+      "sharedLayersContain": ["Code"],
+      "runtimeNamesContain": ["python"],
+      "dockerModeIn": ["both"],
+      "deployModeIn": ["onlyA"]
+    }
+  },
+  {
+    "name": "owner-url-rejected-shape",
+    "a": "https://github.com/openai",
+    "b": "https://github.com/openai/openai-python",
+    "expect": {
+      "compareEligible": false,
+      "aKindIn": ["owner"],
+      "bKindIn": ["repo"]
+    }
+  },
+  {
+    "name": "same-url-warning",
+    "a": "https://github.com/vercel/next.js",
+    "b": "https://github.com/vercel/next.js",
+    "expect": {
+      "compareEligible": true,
+      "warningsContain": ["두 레포를 동일하게 입력했어요."],
+      "commonStackContain": ["Next.js", "TypeScript"],
+      "sharedLayersContain": ["UI", "Logic", "Code"],
+      "runtimeNamesContain": ["node", "rust"],
+      "dockerModeIn": ["both"],
+      "deployModeIn": ["shared"]
+    }
+  }
+]

@@ -1,0 +1,114 @@
+[
+  {
+    "id": "repo-single-nextjs-fullstack",
+    "repoUrl": "https://github.com/ahmedkhaleel2004/gitdiagram",
+    "kind": "repo",
+    "category": "single_nextjs_app",
+    "why": "단일 Next.js 앱 + 외부 서비스 + 부분 분석 케이스를 함께 점검한다.",
+    "criticalQuestions": [
+      "이 레포가 어떤 서비스인지 첫 화면에서 읽히는가",
+      "Canvas에서 UI/API/Logic 구조가 질서 있게 보이는가",
+      "부분 분석 상태가 불안감 없이 전달되는가"
+    ],
+    "stableExpectations": {
+      "projectTypeIn": ["풀스택 웹앱"],
+      "coverageLevelIn": ["partial"]
+    }
+  },
+  {
+    "id": "repo-monorepo-app-large",
+    "repoUrl": "https://github.com/n8n-io/n8n",
+    "kind": "repo",
+    "category": "large_monorepo_app",
+    "why": "대형 모노레포 앱에서 focus root, layer 구성, 제한 분석 표시를 점검한다.",
+    "criticalQuestions": [
+      "대표 범위가 product app 기준으로 잡히는가",
+      "Canvas가 과밀하지 않고 질서 있게 유지되는가",
+      "Self-host/Docker 같은 운영 맥락이 구조 이해를 방해하지 않는가"
+    ],
+    "stableExpectations": {
+      "focusRootEquals": "packages/frontend/editor-ui",
+      "projectTypeIn": ["모노레포 웹 플랫폼"]
+    }
+  },
+  {
+    "id": "repo-monorepo-app-saas",
+    "repoUrl": "https://github.com/calcom/cal.com",
+    "kind": "repo",
+    "category": "monorepo_saas_app",
+    "why": "대표 SaaS monorepo에서 서비스/배포/결제 신호와 구조도를 함께 본다.",
+    "criticalQuestions": [
+      "서비스 정체성이 README보다 빠르게 읽히는가",
+      "Canvas에서 apps/web 중심으로 정리되는가",
+      "환경/외부 서비스 정보가 과도하게 반복되지 않는가"
+    ],
+    "stableExpectations": {
+      "focusRootEquals": "apps/web",
+      "projectTypeIn": ["모노레포 웹 플랫폼"]
+    }
+  },
+  {
+    "id": "repo-sdk-hybrid-monorepo",
+    "repoUrl": "https://github.com/vercel/ai",
+    "kind": "repo",
+    "category": "sdk_plus_demo_hybrid",
+    "why": "SDK + demo app 혼합 monorepo에서 projectType, consumptionMode, focus root 경계를 본다.",
+    "criticalQuestions": [
+      "라이브러리로 이해되되 demo 존재가 숨겨지지 않는가",
+      "packages/ai가 대표 범위로 유지되는가",
+      "Canvas가 앱처럼 보이지 않고 SDK 중심으로 정리되는가"
+    ],
+    "stableExpectations": {
+      "focusRootEquals": "packages/ai",
+      "projectTypeIn": ["라이브러리 또는 SDK"],
+      "consumptionModeIn": ["hybrid"]
+    }
+  },
+  {
+    "id": "repo-python-library",
+    "repoUrl": "https://github.com/openai/openai-python",
+    "kind": "repo",
+    "category": "python_library",
+    "why": "Python 중심 SDK/라이브러리 케이스에서 non-Next.js fallback 표현을 점검한다.",
+    "criticalQuestions": [
+      "프론트엔드 앱처럼 오해되지 않는가",
+      "시작점과 사용 방식이 명확히 보이는가",
+      "비지원/제한 신호가 과장 없이 전달되는가"
+    ],
+    "stableExpectations": {
+      "projectTypeIn": ["라이브러리 또는 SDK"],
+      "stackContain": ["Python"]
+    }
+  },
+  {
+    "id": "repo-component-library",
+    "repoUrl": "https://github.com/tailwindlabs/headlessui",
+    "kind": "repo",
+    "category": "component_library",
+    "why": "디자인 시스템/컴포넌트 라이브러리 계열에서 README-first 구조를 점검한다.",
+    "criticalQuestions": [
+      "앱이 아니라 재사용 라이브러리라는 점이 바로 읽히는가",
+      "Canvas가 page-entry 중심이 아니라 package/library 중심으로 보이는가",
+      "README 시작점이 자연스럽게 앞에 오는가"
+    ],
+    "stableExpectations": {
+      "projectTypeIn": ["컴포넌트 라이브러리 또는 디자인 시스템"]
+    }
+  },
+  {
+    "id": "owner-portfolio",
+    "repoUrl": "https://github.com/tailwindlabs",
+    "kind": "owner",
+    "category": "owner_portfolio",
+    "why": "owner 화면이 구조도가 아니라 포트폴리오 이해 화면으로 보이는지 점검한다.",
+    "criticalQuestions": [
+      "어느 repo부터 보면 되는지가 바로 보이는가",
+      "featured와 beginner 큐레이션이 헷갈리지 않는가",
+      "owner 화면이 repo Result와 같은 레이아웃으로 오인되지 않는가"
+    ],
+    "stableExpectations": {
+      "kindIn": ["owner"],
+      "ownerTypeLabelIn": ["오가니제이션"]
+    }
+  }
+]
