@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { safeExternalHref, safeImageSrc } from "@/components/safe-href";
 import { StackBadge } from "@/components/stack-badge";
 import type {
   RepoAnalysis,
@@ -586,21 +587,29 @@ function PreviewImageGallery({ images }: { images: RepoPreviewImage[] }) {
   // Beginner-first: first image takes a hero slot (full width, tall), remaining
   // fill a 2-col grid at a readable but compact size. object-contain prevents
   // cropping so screenshots read as "whole product", not a thumbnail.
-  const [hero, ...rest] = images.slice(0, 6);
+  // URL은 레포 README에서 왔으므로 사용자 컨텐츠. 위험 스킴은 safeImageSrc가 차단.
+  const safeImages = images
+    .map((image) => ({
+      ...image,
+      safeHref: safeExternalHref(image.url),
+      safeSrc: safeImageSrc(image.url),
+    }))
+    .filter((image) => image.safeHref && image.safeSrc);
+  const [hero, ...rest] = safeImages.slice(0, 6);
   if (!hero) return null;
 
   return (
     <div className="space-y-2">
       <a
-        href={hero.url}
+        href={hero.safeHref as string}
         target="_blank"
         rel="noreferrer noopener"
-        title={hero.alt || hero.url}
+        title={hero.alt || hero.safeHref || undefined}
         className="block overflow-hidden rounded-md border border-[var(--border)] bg-[var(--surface)]"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={hero.url}
+          src={hero.safeSrc as string}
           alt={hero.alt || "preview"}
           loading="lazy"
           className="block max-h-[460px] w-full object-contain"
@@ -614,15 +623,15 @@ function PreviewImageGallery({ images }: { images: RepoPreviewImage[] }) {
               className="overflow-hidden rounded-md border border-[var(--border)] bg-[var(--surface)]"
             >
               <a
-                href={image.url}
+                href={image.safeHref as string}
                 target="_blank"
                 rel="noreferrer noopener"
-                title={image.alt || image.url}
+                title={image.alt || image.safeHref || undefined}
                 className="block"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={image.url}
+                  src={image.safeSrc as string}
                   alt={image.alt || "preview"}
                   loading="lazy"
                   className="block max-h-[200px] w-full object-contain"
