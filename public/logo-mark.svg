@@ -1,7 +1,23 @@
-<svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="8" y="8" width="80" height="80" rx="24" fill="#FFF7EE"/>
-  <path d="M28 31H68" stroke="#0D8C74" stroke-width="8" stroke-linecap="round"/>
-  <path d="M28 48H58" stroke="#113C35" stroke-width="8" stroke-linecap="round"/>
-  <path d="M28 65H47" stroke="#EB7D3C" stroke-width="8" stroke-linecap="round"/>
-  <circle cx="66" cy="63" r="10" fill="#0D8C74"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none" role="img" aria-label="RepoLens">
+  <title>RepoLens</title>
+  <!-- Option A: Lens + Layers
+       렌즈(돋보기) 링 안에 3개의 레이어 막대가 보이는 구조.
+       "레포 구조를 렌즈로 꿰뚫어 본다"는 핵심 메타포를 한 장에 담는다.
+       monochrome + 단일 accent(녹색)로 light/dark 모두 호환. -->
+
+  <!-- Layers inside the lens (UI / Logic / API 세 층 축약) -->
+  <g stroke="currentColor" stroke-width="3" stroke-linecap="round" opacity="0.65">
+    <line x1="24" y1="30" x2="52" y2="30"/>
+    <line x1="24" y1="40" x2="46" y2="40"/>
+    <line x1="24" y1="50" x2="38" y2="50"/>
+  </g>
+
+  <!-- Lens ring -->
+  <circle cx="38" cy="40" r="26" stroke="currentColor" stroke-width="6"/>
+
+  <!-- Lens handle -->
+  <line x1="57" y1="59" x2="80" y2="82" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- Focus dot (accent) — 사용자가 "찾은 한 지점"을 상징 -->
+  <circle cx="38" cy="40" r="4" fill="#0D8C74"/>
 </svg>

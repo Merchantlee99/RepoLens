@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 72" fill="none" role="img" aria-label="RepoLens">
+  <title>RepoLens</title>
+  <!-- Wordmark: Option A mark (렌즈+레이어) + "RepoLens" 텍스트
+       헤더/OG/네비게이션에 쓸 수 있는 가로형. currentColor 상속해
+       라이트/다크 모드 모두 안전. -->
+
+  <!-- Mark (scaled from viewBox 0 0 96 96 → 56x56) -->
+  <g transform="translate(8 8) scale(0.583)">
+    <g stroke="currentColor" stroke-width="3" stroke-linecap="round" opacity="0.65">
+      <line x1="24" y1="30" x2="52" y2="30"/>
+      <line x1="24" y1="40" x2="46" y2="40"/>
+      <line x1="24" y1="50" x2="38" y2="50"/>
+    </g>
+    <circle cx="38" cy="40" r="26" stroke="currentColor" stroke-width="6"/>
+    <line x1="57" y1="59" x2="80" y2="82" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="38" cy="40" r="4" fill="#0D8C74"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="76" y="48"
+        font-family="ui-sans-serif, -apple-system, 'SF Pro Display', 'Inter', system-ui, sans-serif"
+        font-size="30"
+        font-weight="600"
+        letter-spacing="-0.8"
+        fill="currentColor">RepoLens</text>
+</svg>
