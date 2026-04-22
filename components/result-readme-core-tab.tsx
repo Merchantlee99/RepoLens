@@ -1,5 +1,6 @@
 "use client";
 
+import { safeExternalHref } from "@/components/safe-href";
 import type { RepoAnalysis, RepoReadmeLink } from "@/lib/analysis/types";
 
 // README Core 탭 — `analysis.learning.readmeCore`를 "README 원문 재생"이 아닌
@@ -194,13 +195,29 @@ const LINK_KIND_LABEL: Record<RepoReadmeLink["kind"], string> = {
 };
 
 function LinkChip({ link }: { link: RepoReadmeLink }) {
+  // 공격자가 README에 javascript:/data: 스킴 링크를 넣어도 href가 렌더되지
+  // 않도록 safeExternalHref로 필터. 위험 스킴이면 비클릭 텍스트로 대체.
+  const href = safeExternalHref(link.url);
+  if (!href) {
+    return (
+      <span
+        title={link.url}
+        className="inline-flex items-center gap-1.5 rounded-sm border border-dashed border-[var(--border)] bg-[var(--surface-strong)] px-2 py-1 text-[11.5px] text-[var(--fg-dim)]"
+      >
+        <span className="text-[10px] uppercase tracking-[0.04em]">
+          {LINK_KIND_LABEL[link.kind]}
+        </span>
+        <span className="truncate">{link.label}</span>
+      </span>
+    );
+  }
   return (
     <a
-      href={link.url}
+      href={href}
       target="_blank"
       rel="noreferrer noopener"
       className="inline-flex items-center gap-1.5 rounded-sm border border-[var(--border)] bg-[var(--surface-strong)] px-2 py-1 text-[11.5px] text-[var(--fg)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]"
-      title={link.url}
+      title={href}
     >
       <span className="text-[10px] uppercase tracking-[0.04em] text-[var(--fg-dim)]">
         {LINK_KIND_LABEL[link.kind]}

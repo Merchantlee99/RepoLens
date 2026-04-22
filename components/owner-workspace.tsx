@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRef } from "react";
+import { safeExternalHref } from "@/components/safe-href";
 import { ThemeToggle } from "@/components/theme-toggle";
 import type {
   OwnerAnalysis,
@@ -411,17 +412,23 @@ function HeroFeaturedCard({ repo }: { repo: OwnerRepositorySummary }) {
           <ExternalIcon />
           GitHub
         </a>
-        {repo.homepage ? (
-          <a
-            href={repo.homepage}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-[11.5px] text-[var(--fg-muted)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--fg)]"
-          >
-            <ExternalIcon />
-            사이트
-          </a>
-        ) : null}
+        {/* homepage는 레포 소유자가 자유롭게 설정해서 javascript:/data: 같은
+            스킴이 들어올 수 있으므로 safeExternalHref로 한 번 더 검증. */}
+        {(() => {
+          const homepage = safeExternalHref(repo.homepage ?? null);
+          if (!homepage) return null;
+          return (
+            <a
+              href={homepage}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="inline-flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 text-[11.5px] text-[var(--fg-muted)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)] hover:text-[var(--fg)]"
+            >
+              <ExternalIcon />
+              사이트
+            </a>
+          );
+        })()}
       </div>
     </article>
   );
